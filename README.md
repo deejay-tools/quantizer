@@ -42,7 +42,15 @@ Ordine di ricerca dei binari:
 
 Al primo avvio beat_this scarica il checkpoint `final0` in `~/.cache/torch/hub/checkpoints/`.
 
-## Uso
+## Interfaccia grafica
+
+Doppio clic su **`Quantizer.command`** nel Finder, oppure `.venv/bin/python gui.py`.
+Si apre `http://127.0.0.1:8765` nel browser: trascini i brani, scegli le opzioni,
+premi **Quantizza** e ascolti il risultato nella pagina. Per uscire chiudi la finestra
+del Terminale. I file trascinati vengono copiati in `inbox/`; quelli scelti con
+"Scegli file…" restano dove sono.
+
+## Uso da terminale
 
 ```sh
 .venv/bin/python quantize.py "brano.mp3" --device mps --verify
