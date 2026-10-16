@@ -17,6 +17,7 @@ import sys
 import threading
 import time
 import webbrowser
+from datetime import datetime
 from pathlib import Path
 
 from flask import Flask, abort, jsonify, request, send_file
@@ -148,7 +149,10 @@ def watch(proc: subprocess.Popen, started: float) -> None:
     report = job.outdir / "report.json"
     with job.lock:
         if report.exists() and report.stat().st_mtime >= started:
-            job.reports = json.loads(report.read_text())
+            # report.json è cumulativo: mostra solo i brani di questa elaborazione
+            job.reports = [r for r in json.loads(report.read_text())
+                           if datetime.fromisoformat(r.get("processed_at", "1970-01-01"))
+                           .timestamp() >= started]
         if job.cancelled:
             job.state = "cancelled"
         elif proc.returncode == 0 and job.reports:

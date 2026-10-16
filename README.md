@@ -57,7 +57,9 @@ del Terminale. I file trascinati vengono copiati in `inbox/`; quelli scelti con
 ```
 
 I file escono in `quantized/`, insieme a `rekordbox.xml` (da importare in Rekordbox)
-e `report.json`.
+e `report.json`. I due file sono cumulativi: ogni elaborazione aggiunge i nuovi brani a
+quelli già presenti nella cartella. Rielaborare un brano con lo stesso BPM lo sostituisce;
+i brani di cui hai cancellato il file vengono tolti.
 
 | Opzione | Descrizione |
 |---|---|

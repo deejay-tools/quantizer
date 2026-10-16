@@ -7,6 +7,10 @@ Pipeline:
   -> tempo map -> rubberband R3 --timemap -> ffmpeg (MP3 320k + tag e copertina)
   -> rekordbox.xml con griglia a BPM fisso + report.json
 
+rekordbox.xml e report.json sono cumulativi: ogni esecuzione aggiunge i nuovi brani
+a quelli già presenti nella cartella di uscita (stesso file di uscita = sostituito,
+file cancellati = rimossi).
+
 Binari esterni (ffmpeg, ffprobe, rubberband), cercati in quest'ordine:
   1. variabile d'ambiente QUANTIZER_FFMPEG / QUANTIZER_FFPROBE / QUANTIZER_RUBBERBAND
   2. cartella ./bin accanto a questo script
@@ -25,6 +29,7 @@ import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 
@@ -207,6 +212,7 @@ def process(src: Path, f2b, args, tmp: Path) -> dict:
         "source": str(src), "output": str(dst),
         "title": tags.get("title", src.stem), "artist": tags.get("artist", ""),
         "kind": kind,
+        "processed_at": datetime.now().isoformat(timespec="seconds"),
         "beats_detected": int(len(raw)), "beats_inserted": inserted,
         "beats_dropped": dropped,
         "est_bpm": round(plan["est_bpm"], 3),
@@ -221,6 +227,25 @@ def process(src: Path, f2b, args, tmp: Path) -> dict:
     if args.verify:
         report["verify"] = verify(f2b, stretched)
     return report
+
+
+# ---------------------------------------------------------------- collezione
+
+def merge_collection(report_path: Path, new: list[dict]) -> list[dict]:
+    """Unisce i nuovi brani a quelli già in report.json, una voce per file di uscita."""
+    old: list[dict] = []
+    if report_path.exists():
+        try:
+            old = json.loads(report_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            backup = report_path.with_suffix(".json.bak")
+            report_path.replace(backup)
+            print(f"  ! {report_path.name} illeggibile, salvato come {backup.name}")
+    merged = {str(Path(r["output"]).resolve()): r for r in old
+              if Path(r.get("output", "")).is_file()}
+    for r in new:
+        merged[str(Path(r["output"]).resolve())] = r
+    return list(merged.values())
 
 
 def write_rekordbox_xml(reports: list[dict], path: Path) -> None:
@@ -289,9 +314,12 @@ def main() -> None:
             print(f"  ✗ {e}")
 
     if reports:
-        write_rekordbox_xml(reports, args.outdir / "rekordbox.xml")
-        (args.outdir / "report.json").write_text(json.dumps(reports, indent=2, ensure_ascii=False))
-        print(f"\n✓ {len(reports)} brani in {args.outdir}/ (+ rekordbox.xml, report.json)")
+        report_path = args.outdir / "report.json"
+        collection = merge_collection(report_path, reports)
+        write_rekordbox_xml(collection, args.outdir / "rekordbox.xml")
+        report_path.write_text(json.dumps(collection, indent=2, ensure_ascii=False))
+        print(f"\n✓ {len(reports)} brani in {args.outdir}/ "
+              f"(rekordbox.xml e report.json: {len(collection)} brani in totale)")
 
 
 if __name__ == "__main__":
