@@ -306,7 +306,8 @@ def reveal():
 
 @app.get("/api/defaults")
 def defaults():
-    return jsonify(outdir=str(DEFAULT_OUT))
+    # "app" permette a Quantizer.app di riconoscere un server già avviato
+    return jsonify(app="quantizer", outdir=str(DEFAULT_OUT))
 
 
 @app.get("/")
@@ -316,16 +317,39 @@ def index():
 
 # ---------------------------------------------------------------- avvio
 
+def exit_with_parent(parent: int) -> None:
+    """Chiude il server se l'app che l'ha avviato termina (anche in caso di crash)."""
+    while os.getppid() == parent:
+        time.sleep(1)
+    os._exit(0)
+
+
 def main() -> None:
+    global PORT, ALLOWED_HOSTS
+    import argparse
+    ap = argparse.ArgumentParser(description="Interfaccia locale di Quantizer")
+    ap.add_argument("--port", type=int, default=PORT)
+    ap.add_argument("--no-browser", action="store_true",
+                    help="non aprire il browser (usato da Quantizer.app)")
+    ap.add_argument("--parent-pid", type=int,
+                    help="termina quando questo processo termina")
+    args = ap.parse_args()
+    PORT = args.port
+    ALLOWED_HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}
+
     url = f"http://{HOST}:{PORT}"
     with socket.socket() as s:
         busy = s.connect_ex((HOST, PORT)) == 0
     if busy:   # già aperta: riapri solo la pagina
-        webbrowser.open(url)
+        if not args.no_browser:
+            webbrowser.open(url)
         return
+    if args.parent_pid:
+        threading.Thread(target=exit_with_parent, args=(args.parent_pid,), daemon=True).start()
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
-    threading.Timer(1.0, webbrowser.open, args=(url,)).start()
-    print(f"Quantizer è aperto su {url}\nChiudi questa finestra (o Ctrl+C) per uscire.")
+    if not args.no_browser:
+        threading.Timer(1.0, webbrowser.open, args=(url,)).start()
+        print(f"Quantizer è aperto su {url}\nChiudi questa finestra (o Ctrl+C) per uscire.")
     app.run(host=HOST, port=PORT, threaded=True)
 
 

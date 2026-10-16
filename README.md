@@ -44,13 +44,25 @@ Ordine di ricerca dei binari:
 
 Al primo avvio beat_this scarica il checkpoint `final0` in `~/.cache/torch/hub/checkpoints/`.
 
+## App per macOS
+
+```sh
+macapp/build.sh --install
+```
+
+crea **Quantizer.app** in `/Applications` (quindi anche in Launchpad). L'app avvia da
+sola il server locale e mostra la GUI in una propria finestra, senza browser e senza
+barra degli indirizzi; chiudendola (⌘Q o chiudendo la finestra) si chiude anche il
+server. L'app usa il progetto in questa cartella (`.venv`, `bin/`, `gui.py`): se sposti
+la cartella, rilancia `macapp/build.sh --install`. Il registro del server è in
+`~/Library/Logs/Quantizer.log` (menu Vista → Mostra registro).
+
 ## Interfaccia grafica
 
-Doppio clic su **`Quantizer.command`** nel Finder, oppure `.venv/bin/python gui.py`.
-Si apre `http://127.0.0.1:8765` nel browser: trascini i brani, scegli le opzioni,
-premi **Quantizza** e ascolti il risultato nella pagina. Per uscire chiudi la finestra
-del Terminale. I file trascinati vengono copiati in `inbox/`; quelli scelti con
-"Scegli file…" restano dove sono.
+Si apre con Quantizer.app, oppure nel browser con doppio clic su **`Quantizer.command`**
+(o `.venv/bin/python gui.py`, su `http://127.0.0.1:8765`): trascini i brani, scegli le
+opzioni, premi **Quantizza** e ascolti il risultato nella pagina. I file trascinati
+vengono copiati in `inbox/`; quelli scelti con "Scegli file…" restano dove sono.
 
 "Apri nella griglia" mostra la forma d'onda del brano quantizzato con la stessa
 griglia che vedrà Rekordbox, cioè battute numerate dal primo downbeat. Con
@@ -99,7 +111,8 @@ i brani di cui hai cancellato il file vengono tolti.
 |---|---|
 | `quantize.py` | pipeline completa, usabile da sola da terminale |
 | `gui.py`, `gui/index.html` | interfaccia locale (server Flask su 127.0.0.1:8765 + pagina) |
-| `Quantizer.command` | avvio della GUI con doppio clic |
+| `Quantizer.command` | avvio della GUI nel browser con doppio clic |
+| `macapp/` | sorgenti Swift di Quantizer.app, icona e `build.sh` |
 | `bin/` | ffmpeg, ffprobe, rubberband precompilati (non nel repo) |
 | `.venv/` | Python 3.12 e dipendenze (non nel repo) |
 | `quantized/` | brani elaborati, `rekordbox.xml`, `report.json` (non nel repo) |

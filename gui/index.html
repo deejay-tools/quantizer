@@ -376,6 +376,10 @@ $("files").onclick = (e) => {
 };
 $("pick").onclick = async () => addFiles((await api("/api/pick-files", {})).paths);
 
+// un file lasciato fuori dalla zona di drop non deve aprirsi al posto della pagina
+// (nella finestra di Quantizer.app non c'è un tasto "indietro")
+document.addEventListener("dragover", (e) => e.preventDefault());
+document.addEventListener("drop", (e) => e.preventDefault());
 const drop = $("drop");
 drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
 drop.ondragleave = () => drop.classList.remove("over");
