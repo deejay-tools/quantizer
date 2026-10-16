@@ -160,6 +160,24 @@ def build_plan(beats: np.ndarray, sr: int, duration: float, every: int,
     }
 
 
+def tempo_curve(beats: np.ndarray, plan: dict, window: int = 9) -> dict:
+    """Tempo locale del brano originale, posizionato sui tempi dell'uscita: serve al
+    grafico dell'oscillazione nella GUI. Per ogni beat è la pendenza di una retta
+    sui `window` beat centrati (2 battute): i beat di beat_this sono a passi di 20 ms,
+    e la media di pochi intervalli darebbe scalini che il batterista non ha suonato."""
+    n, half = len(beats), window // 2
+    t, bpm = [], []
+    for k in range(n):
+        lo, hi = max(0, k - half), min(n, k + half + 1)
+        if hi - lo < 5:
+            continue
+        slope = np.polyfit(np.arange(lo, hi), beats[lo:hi], 1)[0]
+        t.append(plan["t0"] + k * plan["period"])
+        bpm.append(60.0 / slope)
+    return {"t": [round(float(x), 3) for x in t],
+            "bpm": [round(float(x), 2) for x in bpm]}
+
+
 def first_downbeat_target(beats: np.ndarray, downbeats: np.ndarray, plan: dict) -> float:
     if len(downbeats) == 0:
         return plan["t0"]
@@ -226,6 +244,7 @@ def process(src: Path, f2b, args, tmp: Path) -> dict:
         "duration_out": round(plan["target_dur"], 3),
         "first_downbeat": round(first_downbeat_target(beats, down, plan)
                                 + args.offset_ms / 1000, 3),
+        "tempo": tempo_curve(beats, plan),
     }
     if args.verify:
         report["verify"] = verify(f2b, stretched)

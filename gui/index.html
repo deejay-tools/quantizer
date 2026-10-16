@@ -12,6 +12,7 @@
     --ok: #2b8a3e; --warn: #c27c0e; --bad: #c92a2a; --soft: #f1efe8;
     --wave: #5f5b52; --grid: rgba(29, 29, 27, .16); --bar: rgba(217, 72, 15, .8);
     --head: #1d1d1b;
+    --fast: #e34948; --slow: #2a78d6;   /* coppia divergente validata (più veloce / più lento) */
     --mono: ui-monospace, "SF Mono", Menlo, monospace;
   }
   @media (prefers-color-scheme: dark) {
@@ -21,6 +22,7 @@
       --ok: #69db7c; --warn: #ffc94d; --bad: #ff8787; --soft: #2a2925;
       --wave: #b9b5a9; --grid: rgba(236, 235, 230, .16); --bar: rgba(255, 107, 44, .85);
       --head: #ffffff;
+      --fast: #e66767; --slow: #3987e5;
     }
   }
   * { box-sizing: border-box; }
@@ -105,6 +107,22 @@
            color: var(--muted); pointer-events: none; }
   .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--muted); margin-top: 8px; }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  #tempoBox { margin-top: 16px; }
+  .chart-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px 16px; flex-wrap: wrap; }
+  .chart-head h4 { margin: 0; font-size: 14px; }
+  .chart-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); }
+  .chart-legend i { display: inline-block; width: 12px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  .chart-legend i.k-fast { background: var(--fast); opacity: .55; }
+  .chart-legend i.k-slow { background: var(--slow); opacity: .55; }
+  .chart-legend i.k-mean { height: 0; border-top: 2px solid var(--muted); border-radius: 0; vertical-align: 3px; }
+  .chart-legend b { color: var(--ink); font-weight: 600; }
+  .chartbox { position: relative; height: 150px; margin-top: 8px; cursor: crosshair; }
+  .chartbox canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .tip { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line);
+         border-radius: 8px; padding: 6px 9px; font-size: 12px; line-height: 1.4; white-space: nowrap;
+         box-shadow: 0 2px 8px rgba(0,0,0,.12); font-variant-numeric: tabular-nums; }
+  .tip b { font-weight: 600; }
+  .tip .muted { color: var(--muted); }
   #edSummary { margin-top: 12px; }
   #edSummary .stats { margin: 0 0 8px; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
@@ -289,6 +307,24 @@
         <button class="small link" id="gridReset">Annulla</button>
         <button class="small" id="gridSave">Salva in rekordbox.xml</button>
       </div>
+      <div id="tempoBox" hidden>
+        <div class="chart-head">
+          <h4>Tempo del batterista nel brano originale</h4>
+          <div class="chart-legend">
+            <span><i class="k-fast"></i>più veloce della media</span>
+            <span><i class="k-slow"></i>più lento</span>
+            <span><i class="k-mean"></i>media <b id="tempoMean"></b></span>
+          </div>
+        </div>
+        <div class="chartbox" id="tempoChart">
+          <canvas id="tempo"></canvas>
+          <canvas id="tempoHover"></canvas>
+          <div class="tip" id="tempoTip" hidden></div>
+        </div>
+        <div class="hint" id="tempoStats"></div>
+      </div>
+      <p class="hint" id="tempoMissing" hidden>Il grafico del tempo originale è disponibile per i brani elaborati
+        da ora in poi: rielabora questo brano per vederlo.</p>
       <div id="edSummary"></div>
     </div>
 
@@ -532,6 +568,7 @@ async function openEditor(r) {
   $("edBpm").innerHTML = `${fmt(r.target_bpm)} <small>BPM</small>`;
   $("edMsg").textContent = "Caricamento forma d'onda…";
   $("edSummary").innerHTML = "";
+  $("tempoBox").hidden = true; $("tempoMissing").hidden = true; tempo.pts = [];
   clearCanvas($("wave")); clearCanvas($("head"));
   renderResults();
   try {
@@ -550,6 +587,7 @@ async function openEditor(r) {
   ed.view = { start: 0, dur: ed.dur };
   analyzeBeats();
   updateGridInfo();
+  setupTempo();
   drawAll();
 }
 
@@ -623,7 +661,7 @@ function setupCanvas(c) {
 function clearCanvas(c) { setupCanvas(c); }
 const xOf = (t, w) => (t - ed.view.start) / ed.view.dur * w;
 
-function drawAll() { drawWave(); drawHead(); }
+function drawAll() { drawWave(); drawHead(); drawTempo(); }
 
 function drawWave() {
   if (!ed.buf) return;
@@ -759,6 +797,130 @@ box.addEventListener("wheel", (e) => {
 }, { passive: false });
 window.addEventListener("resize", drawAll);
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawAll);
+
+// ---- grafico del tempo originale (oscillazione rispetto alla media)
+const tempo = { pts: [], mean: 0, lo: 0, hi: 0 };
+const TM = { left: 46, right: 10, top: 8, bottom: 22 };   // margini del grafico
+
+function setupTempo() {
+  const tc = ed.report.tempo;
+  const has = !!(tc && tc.t && tc.t.length > 1);
+  $("tempoBox").hidden = !has;
+  $("tempoMissing").hidden = has;
+  if (!has) return;
+  tempo.pts = tc.t.map((t, i) => ({ t, bpm: tc.bpm[i] }));
+  tempo.mean = ed.report.est_bpm;
+  const devs = tempo.pts.map((p) => p.bpm - tempo.mean);
+  const span = Math.max(1, ...devs.map(Math.abs)) * 1.15;    // almeno ±1 BPM, simmetrico
+  tempo.lo = tempo.mean - span; tempo.hi = tempo.mean + span;
+  $("tempoMean").textContent = `${fmt(tempo.mean)} BPM`;
+  const bpms = tempo.pts.map((p) => p.bpm);
+  const min = Math.min(...bpms), max = Math.max(...bpms);
+  const sd = Math.sqrt(devs.reduce((s, d) => s + d * d, 0) / devs.length);
+  const pct = (b) => signed((b - tempo.mean) / tempo.mean * 100, 1);
+  $("tempoStats").innerHTML =
+    `Tempo su 2 battute: da <b>${fmt(min)}</b> (${pct(min)}%) a <b>${fmt(max)}</b> BPM (${pct(max)}%) · ` +
+    `scarto tipico <b>±${fmt(sd)}</b> BPM · uscita a <b>${fmt(ed.report.target_bpm)}</b> BPM costanti. ` +
+    `Clic sul grafico per andare a quel punto.`;
+}
+
+const tx2 = (t, w) => TM.left + t / ed.dur * (w - TM.left - TM.right);
+const ty2 = (b, h) => TM.top + (tempo.hi - b) / (tempo.hi - tempo.lo) * (h - TM.top - TM.bottom);
+
+function niceStep(range, target) {
+  const raw = range / target, pow = 10 ** Math.floor(Math.log10(raw));
+  return [1, 2, 2.5, 5, 10].map((m) => m * pow).find((s) => s >= raw) || 10 * pow;
+}
+
+function drawTempo() {
+  if ($("tempoBox").hidden || !ed.buf || !tempo.pts.length) return;
+  const [g, w, h] = setupCanvas($("tempo"));
+  const x0 = TM.left, x1 = w - TM.right, y0 = TM.top, y1 = h - TM.bottom;
+  g.font = "11px -apple-system, sans-serif";
+
+  // finestra visibile nella forma d'onda (dietro a tutto)
+  g.fillStyle = cssVar("--soft");
+  const vx0 = tx2(ed.view.start, w), vx1 = tx2(ed.view.start + ed.view.dur, w);
+  g.fillRect(vx0, y0, Math.max(2, vx1 - vx0), y1 - y0);
+
+  // griglia orizzontale ed etichette BPM (testo in inchiostro, mai nel colore dei dati)
+  const step = niceStep(tempo.hi - tempo.mean, 2);
+  g.strokeStyle = cssVar("--line"); g.lineWidth = 1;
+  g.fillStyle = cssVar("--muted"); g.textAlign = "right"; g.textBaseline = "middle";
+  for (let v = tempo.mean - Math.floor((tempo.mean - tempo.lo) / step) * step; v <= tempo.hi; v += step) {
+    if (Math.abs(v - tempo.mean) < step / 2) continue;           // la media ha la sua linea
+    const y = Math.round(ty2(v, h)) + 0.5;
+    g.beginPath(); g.moveTo(x0, y); g.lineTo(x1, y); g.stroke();
+    g.fillText(fmt(v, step < 1 ? 1 : 0), x0 - 6, y);
+  }
+  // asse dei tempi
+  g.textAlign = "center"; g.textBaseline = "top";
+  const tstep = ed.dur > 360 ? 60 : ed.dur > 120 ? 30 : 10;
+  for (let t = 0; t <= ed.dur; t += tstep) {
+    const x = tx2(t, w);
+    g.fillText(fmtTime(t).replace(/\.\d$/, ""), clamp(x, x0 + 12, x1 - 12), y1 + 6);
+  }
+
+  // area tra la curva e la media: rossa sopra (più veloce), blu sotto (più lento)
+  const ym = ty2(tempo.mean, h);
+  const area = new Path2D();
+  area.moveTo(tx2(tempo.pts[0].t, w), ym);
+  for (const p of tempo.pts) area.lineTo(tx2(p.t, w), ty2(p.bpm, h));
+  area.lineTo(tx2(tempo.pts[tempo.pts.length - 1].t, w), ym);
+  area.closePath();
+  for (const [color, top, bottom] of [["--fast", y0, ym], ["--slow", ym, y1]]) {
+    g.save();
+    g.beginPath(); g.rect(x0, top, x1 - x0, bottom - top); g.clip();
+    g.globalAlpha = 0.28; g.fillStyle = cssVar(color); g.fill(area);
+    g.restore();
+  }
+
+  // media
+  g.strokeStyle = cssVar("--muted"); g.lineWidth = 1.5;
+  g.beginPath(); g.moveTo(x0, Math.round(ym) + 0.5); g.lineTo(x1, Math.round(ym) + 0.5); g.stroke();
+
+  // curva del tempo
+  g.strokeStyle = cssVar("--ink"); g.lineWidth = 2; g.lineJoin = "round"; g.lineCap = "round";
+  g.beginPath();
+  tempo.pts.forEach((p, i) => (i ? g.lineTo : g.moveTo).call(g, tx2(p.t, w), ty2(p.bpm, h)));
+  g.stroke();
+}
+
+function nearestTempo(t) {
+  let lo = 0, hi = tempo.pts.length - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; (tempo.pts[m].t < t ? lo = m : hi = m); }
+  return Math.abs(tempo.pts[lo].t - t) <= Math.abs(tempo.pts[hi].t - t) ? lo : hi;
+}
+function tempoTimeAt(e) {
+  const r = $("tempoChart").getBoundingClientRect();
+  return clamp((e.clientX - r.left - TM.left) / (r.width - TM.left - TM.right), 0, 1) * ed.dur;
+}
+$("tempoChart").addEventListener("pointermove", (e) => {
+  if (!ed.buf || !tempo.pts.length) return;
+  const p = tempo.pts[nearestTempo(tempoTimeAt(e))];
+  const [g, w, h] = setupCanvas($("tempoHover"));
+  const x = tx2(p.t, w), y = ty2(p.bpm, h);
+  g.strokeStyle = cssVar("--muted"); g.lineWidth = 1;                    // crosshair
+  g.beginPath(); g.moveTo(Math.round(x) + 0.5, TM.top); g.lineTo(Math.round(x) + 0.5, h - TM.bottom); g.stroke();
+  g.fillStyle = cssVar(p.bpm >= tempo.mean ? "--fast" : "--slow");         // marker con anello
+  g.strokeStyle = cssVar("--panel"); g.lineWidth = 2;
+  g.beginPath(); g.arc(x, y, 4.5, 0, Math.PI * 2); g.fill(); g.stroke();
+  const tip = $("tempoTip");
+  const dev = (p.bpm - tempo.mean) / tempo.mean * 100;
+  tip.innerHTML = `<span class="muted">${fmtTime(p.t)}</span><br><b>${fmt(p.bpm)} BPM</b><br>` +
+    `${signed(dev, 1)}% ${dev >= 0 ? "più veloce" : "più lento"} della media`;
+  tip.hidden = false;
+  const left = x + 12 + tip.offsetWidth > w ? x - 12 - tip.offsetWidth : x + 12;
+  tip.style.left = `${left}px`;
+  tip.style.top = `${clamp(y - tip.offsetHeight / 2, 0, h - tip.offsetHeight)}px`;
+});
+$("tempoChart").addEventListener("pointerleave", () => { clearCanvas($("tempoHover")); $("tempoTip").hidden = true; });
+$("tempoChart").addEventListener("click", (e) => {
+  if (!ed.buf) return;
+  const t = tempoTimeAt(e);
+  setView(t - ed.view.dur / 2, ed.view.dur);
+  seek(t);
+});
 
 // ---- regolazione della griglia
 function setGrid(s) {

@@ -72,6 +72,12 @@ rosso oltre. I punti rossi sono elencati e con un clic si ascoltano. Il metronom
 suona sulla griglia insieme alla musica. La scheda "Collezione" elenca tutti i
 brani già presenti nella cartella di uscita.
 
+Sotto la forma d'onda, il grafico **"Tempo del batterista nel brano originale"** mostra
+come oscillava il tempo prima della quantizzazione rispetto alla media: rosso dove era
+più veloce, blu dove era più lento. Ogni punto è il tempo misurato su 2 battute. Il
+riquadro grigio è il tratto visibile nella forma d'onda; un clic sul grafico porta a quel
+punto. Il grafico c'è per i brani elaborati da questa versione in poi.
+
 Per correggere la griglia senza rielaborare l'audio:
 
 - attiva **"Sposta griglia"** e trascina la forma d'onda;
