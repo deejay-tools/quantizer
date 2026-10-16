@@ -3,3 +3,4 @@ soundfile
 torch
 torchaudio
 beat_this @ https://github.com/CPJKU/beat_this/archive/main.zip
+flask

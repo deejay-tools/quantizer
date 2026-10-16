@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quantizer</title>
+<style>
+  :root {
+    --bg: #f4f3ef; --panel: #ffffff; --ink: #1d1d1b; --muted: #6d6b64;
+    --line: #e2e0d8; --accent: #d9480f; --accent-ink: #ffffff;
+    --ok: #2b8a3e; --warn: #c27c0e; --bad: #c92a2a; --soft: #f1efe8;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #161614; --panel: #201f1c; --ink: #ecebe6; --muted: #9a978e;
+      --line: #34322d; --accent: #ff6b2c; --accent-ink: #1a0d05;
+      --ok: #69db7c; --warn: #ffc94d; --bad: #ff8787; --soft: #2a2925;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+  }
+  main { max-width: 880px; margin: 0 auto; padding: 28px 16px 64px; }
+  header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 20px; }
+  h1 { font-size: 26px; margin: 0; letter-spacing: -0.02em; }
+  header p { margin: 0; color: var(--muted); }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em;
+       color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+  section { background: var(--panel); border: 1px solid var(--line);
+            border-radius: 14px; padding: 18px 20px; margin-bottom: 16px; }
+
+  button { font: inherit; cursor: pointer; border-radius: 8px; padding: 8px 14px;
+           border: 1px solid var(--line); background: var(--soft); color: var(--ink); }
+  button:hover { border-color: var(--muted); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--accent); color: var(--accent-ink);
+                   border-color: var(--accent); font-weight: 600; padding: 11px 22px; }
+  button.link { background: none; border: none; padding: 2px 6px; color: var(--muted); }
+
+  #drop { border: 2px dashed var(--line); border-radius: 12px; padding: 22px;
+          text-align: center; color: var(--muted); transition: .15s; }
+  #drop.over { border-color: var(--accent); background: var(--soft); color: var(--ink); }
+  #drop button { margin-top: 10px; }
+  #files { list-style: none; margin: 12px 0 0; padding: 0; }
+  #files li { display: flex; justify-content: space-between; align-items: center;
+              padding: 6px 10px; border-radius: 8px; background: var(--soft); margin-top: 6px; }
+  #files li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px 24px; }
+  .field label.title { display: block; font-weight: 600; margin-bottom: 6px; }
+  .field .hint { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  select, input[type=number], input[type=text] {
+    font: inherit; color: var(--ink); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; width: 100%;
+  }
+  .radio { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+  .inline { display: flex; gap: 8px; align-items: center; }
+  .inline input { width: 110px; }
+  .check { display: flex; gap: 8px; align-items: flex-start; }
+  .check input { margin-top: 4px; }
+  #outdir { font-family: var(--mono); font-size: 13px; }
+
+  .run { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  #status { color: var(--muted); }
+  progress { width: 100%; height: 8px; margin-top: 14px; accent-color: var(--accent); }
+  details { margin-top: 10px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  #log { font-family: var(--mono); font-size: 12px; white-space: pre-wrap;
+         background: var(--soft); border-radius: 8px; padding: 10px; max-height: 220px;
+         overflow: auto; margin-top: 8px; }
+
+  .card { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-top: 12px; }
+  .card-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
+  .card h3 { margin: 0; font-size: 17px; }
+  .card .artist { color: var(--muted); }
+  .bpm { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .bpm small { font-size: 13px; color: var(--muted); font-weight: 400; }
+  .stats { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 10px 0; font-size: 13px; color: var(--muted); }
+  .stats b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .badge { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 99px; }
+  .badge.ok { color: var(--ok); border: 1px solid var(--ok); }
+  .badge.warn { color: var(--warn); border: 1px solid var(--warn); }
+  .badge.bad { color: var(--bad); border: 1px solid var(--bad); }
+  audio { width: 100%; margin-top: 4px; }
+  .card-actions { display: flex; gap: 8px; margin-top: 8px; }
+  .empty { color: var(--muted); }
+  .error { color: var(--bad); }
+  @media (max-width: 520px) { .card-head { flex-direction: column; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Quantizer</h1>
+    <p>porta i brani suonati dal vivo a BPM costante</p>
+  </header>
+
+  <section>
+    <h2>1 · Brani</h2>
+    <div id="drop">
+      Trascina qui i file audio
+      <div><button id="pick">Scegli file…</button></div>
+    </div>
+    <ul id="files"></ul>
+  </section>
+
+  <section>
+    <h2>2 · Opzioni</h2>
+    <div class="grid">
+      <div class="field">
+        <label class="title">Tempo di destinazione</label>
+        <label class="radio"><input type="radio" name="bpmMode" value="auto" checked> Automatico (media del brano)</label>
+        <label class="radio inline"><input type="radio" name="bpmMode" value="fixed"> Fisso
+          <input type="number" id="bpm" min="40" max="250" step="0.01" placeholder="120"> BPM</label>
+      </div>
+
+      <div class="field" id="roundField">
+        <label class="title" for="round">Arrotonda il BPM automatico</label>
+        <select id="round">
+          <option value="0.01">No (es. 102,76)</option>
+          <option value="0.1">A 0,1 (es. 102,8)</option>
+          <option value="0.5">A 0,5 (es. 103,0)</option>
+          <option value="1">All'intero (es. 103)</option>
+        </select>
+        <div class="hint">Un BPM intero si sincronizza meglio con le altre tracce.</div>
+      </div>
+
+      <div class="field">
+        <label class="title" for="every">Aderenza alla griglia</label>
+        <select id="every">
+          <option value="1">Ogni beat — più preciso</option>
+          <option value="2">Ogni 2 beat</option>
+          <option value="4">Ogni battuta — più naturale</option>
+        </select>
+        <div class="hint">Se senti colpi "tirati", prova "ogni battuta".</div>
+      </div>
+
+      <div class="field">
+        <label class="title" for="format">Formato di uscita</label>
+        <div class="inline">
+          <select id="format">
+            <option value="mp3">MP3</option>
+            <option value="aiff">AIFF</option>
+            <option value="wav">WAV</option>
+            <option value="flac">FLAC</option>
+          </select>
+          <select id="bitrate">
+            <option value="320k">320 kbps</option>
+            <option value="256k">256 kbps</option>
+            <option value="192k">192 kbps</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="title" for="offset">Sposta il primo downbeat</label>
+        <div class="inline"><input type="number" id="offset" step="1" value="0"> ms</div>
+        <div class="hint">Corregge solo la griglia in Rekordbox, non l'audio.</div>
+      </div>
+
+      <div class="field">
+        <label class="title" for="device">Processore</label>
+        <select id="device">
+          <option value="mps">GPU Apple — più veloce</option>
+          <option value="cpu">CPU</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label class="title">Controllo qualità</label>
+        <label class="check"><input type="checkbox" id="verify" checked>
+          <span>Misura la precisione del risultato<br><span class="hint">un po' più lento</span></span></label>
+      </div>
+
+      <div class="field">
+        <label class="title">Cartella di uscita</label>
+        <input type="text" id="outdir" readonly>
+        <div class="inline" style="margin-top:6px">
+          <button id="pickOut">Cambia…</button>
+          <button id="openOut" class="link">Apri nel Finder</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="run">
+      <button id="start" class="primary">Quantizza</button>
+      <button id="cancel" hidden>Annulla</button>
+      <span id="status">Aggiungi uno o più brani.</span>
+    </div>
+    <progress id="progress" hidden></progress>
+    <details>
+      <summary>Dettagli tecnici</summary>
+      <div id="log">—</div>
+    </details>
+  </section>
+
+  <section id="resultsBox" hidden>
+    <h2>3 · Risultati</h2>
+    <div id="results"></div>
+    <p class="hint" style="margin-top:14px">
+      In Rekordbox: <i>File → Importa → Importa collezione</i> e scegli <code>rekordbox.xml</code>
+      dalla cartella di uscita. I brani compaiono nella playlist "Quantized".
+    </p>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const OPTS = ["round", "every", "format", "bitrate", "offset", "device", "verify", "bpm"];
+let files = [];
+let polling = null;
+
+// ---------------------------------------------------------------- utilità
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} : {
+    method: "POST",
+    headers: body instanceof FormData ? {} : { "Content-Type": "application/json" },
+    body: body instanceof FormData ? body : JSON.stringify(body),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || `errore ${r.status}`);
+  return data;
+}
+const fmt = (n, d = 2) => Number(n).toLocaleString("it-IT", { minimumFractionDigits: d, maximumFractionDigits: d });
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const base = (p) => p.split("/").pop();
+
+function save() {
+  const o = {};
+  for (const k of OPTS) o[k] = $(k).type === "checkbox" ? $(k).checked : $(k).value;
+  o.bpmMode = document.querySelector("input[name=bpmMode]:checked").value;
+  o.outdir = $("outdir").value;
+  try { localStorage.setItem("quantizer-opts", JSON.stringify(o)); } catch {}
+}
+function load() {
+  let o = null;
+  try { o = JSON.parse(localStorage.getItem("quantizer-opts")); } catch {}
+  if (!o) return;
+  for (const k of OPTS) if (k in o) $(k).type === "checkbox" ? ($(k).checked = o[k]) : ($(k).value = o[k]);
+  if (o.bpmMode) document.querySelector(`input[name=bpmMode][value=${o.bpmMode}]`).checked = true;
+  if (o.outdir) $("outdir").value = o.outdir;
+}
+function syncUI() {
+  const fixed = document.querySelector("input[name=bpmMode]:checked").value === "fixed";
+  $("bpm").disabled = !fixed;
+  $("roundField").style.opacity = fixed ? 0.4 : 1;
+  $("round").disabled = fixed;
+  $("bitrate").hidden = $("format").value !== "mp3";
+  $("start").disabled = !files.length || polling !== null;
+  if (!polling) $("status").textContent = files.length
+    ? `${files.length} ${files.length === 1 ? "brano pronto" : "brani pronti"}.`
+    : "Aggiungi uno o più brani.";
+}
+
+// ---------------------------------------------------------------- brani
+function addFiles(paths) {
+  for (const p of paths) if (!files.includes(p)) files.push(p);
+  renderFiles();
+}
+function renderFiles() {
+  $("files").innerHTML = files.map((p, i) =>
+    `<li><span title="${esc(p)}">${esc(base(p))}</span><button class="link" data-i="${i}" title="Rimuovi">✕</button></li>`).join("");
+  syncUI();
+}
+$("files").onclick = (e) => {
+  if (e.target.dataset.i !== undefined) { files.splice(+e.target.dataset.i, 1); renderFiles(); }
+};
+$("pick").onclick = async () => addFiles((await api("/api/pick-files", {})).paths);
+
+const drop = $("drop");
+drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
+drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = async (e) => {
+  e.preventDefault(); drop.classList.remove("over");
+  const fd = new FormData();
+  for (const f of e.dataTransfer.files) fd.append("files", f);
+  $("status").textContent = "Caricamento…";
+  try { addFiles((await api("/api/upload", fd)).paths); }
+  catch (err) { $("status").textContent = err.message; }
+};
+
+// ---------------------------------------------------------------- opzioni
+document.querySelectorAll("select, input").forEach((el) => el.addEventListener("change", () => { syncUI(); save(); }));
+$("pickOut").onclick = async () => {
+  const { path } = await api("/api/pick-folder", {});
+  if (path) { $("outdir").value = path; save(); }
+};
+$("openOut").onclick = () => api("/api/reveal", {});
+
+// ---------------------------------------------------------------- elaborazione
+$("start").onclick = async () => {
+  const fixed = document.querySelector("input[name=bpmMode]:checked").value === "fixed";
+  if (fixed && !(+$("bpm").value > 0)) { $("status").textContent = "Inserisci il BPM fisso."; return; }
+  const options = {
+    bpm: fixed ? +$("bpm").value : null,
+    round: +$("round").value, every: +$("every").value,
+    format: $("format").value, bitrate: $("bitrate").value,
+    offset_ms: +$("offset").value || 0, device: $("device").value,
+    verify: $("verify").checked,
+  };
+  try {
+    await api("/api/run", { files, options, outdir: $("outdir").value });
+  } catch (err) { $("status").innerHTML = `<span class="error">${esc(err.message)}</span>`; return; }
+  $("resultsBox").hidden = true;
+  $("cancel").hidden = false;
+  $("progress").hidden = false;
+  $("progress").removeAttribute("value");
+  polling = setInterval(poll, 700);
+  syncUI();
+  poll();
+};
+$("cancel").onclick = () => api("/api/cancel", {});
+
+async function poll() {
+  const s = await api("/api/status");
+  $("log").textContent = s.log.join("\n") || "Caricamento del modello…";
+  $("log").scrollTop = $("log").scrollHeight;
+  if (s.state === "running") {
+    const cur = Math.max(s.current, 1);
+    $("status").textContent = `Elaborazione brano ${cur} di ${s.total}…`;
+    $("progress").max = s.total;
+    if (s.current) $("progress").value = s.current - 0.5;
+    return;
+  }
+  clearInterval(polling); polling = null;
+  $("cancel").hidden = true;
+  $("progress").hidden = true;
+  const failed = s.log.filter((l) => l.trim().startsWith("✗")).length;
+  if (s.state === "cancelled") $("status").textContent = "Annullato.";
+  else if (s.state === "done") $("status").textContent =
+    `Fatto: ${s.reports.length} ${s.reports.length === 1 ? "brano" : "brani"}` + (failed ? `, ${failed} non riusciti (vedi dettagli).` : ".");
+  else $("status").innerHTML = `<span class="error">Qualcosa è andato storto: apri "Dettagli tecnici".</span>`;
+  renderResults(s.reports);
+  syncUI();
+}
+
+// ---------------------------------------------------------------- risultati
+function quality(v) {
+  if (!v) return "";
+  const m = v.err_median_ms;
+  const [cls, txt] = m < 8 ? ["ok", "Ottimo"] : m < 15 ? ["warn", "Buono"] : ["bad", "Da controllare"];
+  return `<span class="badge ${cls}" title="errore mediano ${fmt(m, 1)} ms, massimo ${fmt(v.err_max_ms, 1)} ms">${txt}</span>`;
+}
+function renderResults(reports) {
+  if (!reports.length) return;
+  $("resultsBox").hidden = false;
+  $("results").innerHTML = reports.map((r, i) => {
+    const [lo, hi] = r.local_bpm_range;
+    const v = r.verify;
+    return `<div class="card">
+      <div class="card-head">
+        <div><h3>${esc(r.title)}</h3><div class="artist">${esc(r.artist || "")}</div></div>
+        <div class="bpm"><small>${fmt(r.est_bpm)} →</small> ${fmt(r.target_bpm)} <small>BPM</small></div>
+      </div>
+      <div class="stats">
+        <span>Il batterista oscillava tra <b>${fmt(lo)}</b> e <b>${fmt(hi)}</b> BPM</span>
+        <span>Scarto massimo corretto <b>${fmt(r.drift_max_ms, 0)} ms</b></span>
+        ${v ? `<span>Precisione finale <b>${fmt(v.err_median_ms, 1)} ms</b> ${quality(v)}</span>` : ""}
+      </div>
+      <audio controls preload="none" src="/api/audio?path=${encodeURIComponent(r.output)}"></audio>
+      <div class="card-actions"><button data-reveal="${i}">Mostra nel Finder</button></div>
+    </div>`;
+  }).join("");
+  $("results").querySelectorAll("[data-reveal]").forEach((b) =>
+    b.onclick = () => api("/api/reveal", { path: reports[+b.dataset.reveal].output }));
+}
+
+// ---------------------------------------------------------------- avvio
+(async () => {
+  $("outdir").value = (await api("/api/defaults")).outdir;
+  load();
+  syncUI();
+  const s = await api("/api/status");
+  if (s.state === "running") { polling = setInterval(poll, 700); $("cancel").hidden = false; $("progress").hidden = false; }
+  else renderResults(s.reports);
+})();
+</script>
+</body>
+</html>
