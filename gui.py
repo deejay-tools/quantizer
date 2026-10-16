@@ -8,12 +8,14 @@ lanciato come processo separato con le opzioni scelte nella pagina.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import webbrowser
@@ -22,10 +24,13 @@ from pathlib import Path
 
 from flask import Flask, abort, jsonify, request, send_file
 
+import quantize
+
 ROOT = Path(__file__).resolve().parent
 PAGE = ROOT / "gui" / "index.html"
 INBOX = ROOT / "inbox"
 DEFAULT_OUT = ROOT / "quantized"
+PCM_CACHE = Path(tempfile.gettempdir()) / "quantizer-pcm"
 HOST, PORT = "127.0.0.1", 8765
 ALLOWED_HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}
 AUDIO_EXT = {".mp3", ".wav", ".aif", ".aiff", ".flac", ".m4a", ".ogg"}
@@ -50,6 +55,8 @@ class Job:
 
 
 job = Job()
+# file di uscita che la pagina può ascoltare / mostrare nel Finder
+known_outputs: set[Path] = set()
 
 
 # ---------------------------------------------------------------- sicurezza
@@ -64,8 +71,16 @@ def local_only():
         abort(403)
 
 
-def output_paths() -> set[Path]:
-    return {Path(r["output"]).resolve() for r in job.reports}
+def remember(reports: list[dict]) -> list[dict]:
+    known_outputs.update(Path(r["output"]).resolve() for r in reports)
+    return reports
+
+
+def known(path: str | None) -> Path:
+    p = Path(path or "").resolve()
+    if p not in known_outputs or not p.is_file():
+        abort(404)
+    return p
 
 
 # ---------------------------------------------------------------- dialoghi macOS
@@ -139,6 +154,15 @@ def build_cmd(files: list[str], o: dict, outdir: Path) -> list[str]:
     return cmd
 
 
+def read_collection(outdir: Path) -> list[dict]:
+    report = outdir / "report.json"
+    try:
+        reports = json.loads(report.read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
+    return [r for r in reports if Path(r.get("output", "")).is_file()]
+
+
 def watch(proc: subprocess.Popen, started: float) -> None:
     for line in proc.stdout:
         line = line.rstrip()
@@ -150,9 +174,10 @@ def watch(proc: subprocess.Popen, started: float) -> None:
     with job.lock:
         if report.exists() and report.stat().st_mtime >= started:
             # report.json è cumulativo: mostra solo i brani di questa elaborazione
-            job.reports = [r for r in json.loads(report.read_text())
-                           if datetime.fromisoformat(r.get("processed_at", "1970-01-01"))
-                           .timestamp() >= started]
+            job.reports = remember(
+                [r for r in read_collection(job.outdir)
+                 if datetime.fromisoformat(r.get("processed_at", "1970-01-01"))
+                 .timestamp() >= started])
         if job.cancelled:
             job.state = "cancelled"
         elif proc.returncode == 0 and job.reports:
@@ -206,25 +231,48 @@ def status():
 
 # ---------------------------------------------------------------- risultati
 
+@app.get("/api/collection")
+def collection():
+    outdir = Path(request.args.get("outdir") or DEFAULT_OUT).expanduser()
+    return jsonify(reports=remember(read_collection(outdir)))
+
+
+def decoded_pcm(src: Path) -> Path:
+    """WAV decodificato da ffmpeg, così la forma d'onda non risente del ritardo
+    dell'encoder MP3 che alcuni browser non compensano."""
+    st = src.stat()
+    key = hashlib.sha1(f"{src}|{st.st_mtime_ns}|{st.st_size}".encode()).hexdigest()
+    dst = PCM_CACHE / f"{key}.wav"
+    if not dst.exists():
+        PCM_CACHE.mkdir(exist_ok=True)
+        ffmpeg = quantize.find_tool("ffmpeg")
+        if not ffmpeg:
+            abort(500)
+        tmp = dst.with_suffix(".part.wav")
+        quantize.run([ffmpeg, "-y", "-v", "error", "-i", src, "-vn",
+                      "-c:a", "pcm_s16le", tmp])
+        tmp.replace(dst)
+    return dst
+
+
 @app.get("/api/audio")
 def audio():
-    p = Path(request.args.get("path", "")).resolve()
-    if p not in output_paths() or not p.is_file():
-        abort(404)
+    p = known(request.args.get("path"))
+    if request.args.get("pcm"):
+        return send_file(decoded_pcm(p), mimetype="audio/wav", conditional=True)
     return send_file(p, conditional=True)
 
 
 @app.post("/api/reveal")
 def reveal():
-    p = request.get_json(force=True).get("path")
-    if p:
-        p = Path(p).resolve()
-        if p not in output_paths():
-            abort(404)
-        subprocess.run(["open", "-R", str(p)])
-    else:
-        job.outdir.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["open", str(job.outdir)])
+    data = request.get_json(force=True)
+    if data.get("path"):
+        subprocess.run(["open", "-R", str(known(data["path"]))])
+        return jsonify(ok=True)
+    outdir = Path(data.get("outdir") or DEFAULT_OUT).expanduser()
+    if not outdir.is_dir():
+        return jsonify(error="La cartella di uscita non esiste ancora"), 404
+    subprocess.run(["open", str(outdir)])
     return jsonify(ok=True)
 
 

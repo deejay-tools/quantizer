@@ -50,6 +50,14 @@ premi **Quantizza** e ascolti il risultato nella pagina. Per uscire chiudi la fi
 del Terminale. I file trascinati vengono copiati in `inbox/`; quelli scelti con
 "Scegli file…" restano dove sono.
 
+"Apri nella griglia" mostra la forma d'onda del brano quantizzato con la stessa
+griglia che vedrà Rekordbox, cioè battute numerate dal primo downbeat. Con
+"Controllo qualità" attivo compaiono anche i beat rilevati sull'uscita, colorati
+in base alla distanza dalla griglia: verde entro 10 ms, giallo fino a 30 ms,
+rosso oltre. I punti rossi sono elencati e con un clic si ascoltano. Il metronomo
+suona sulla griglia insieme alla musica. La scheda "Collezione" elenca tutti i
+brani già presenti nella cartella di uscita.
+
 ## Uso da terminale
 
 ```sh

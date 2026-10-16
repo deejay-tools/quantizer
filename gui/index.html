@@ -4,11 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Quantizer</title>
+<link rel="icon" href="data:,">
 <style>
   :root {
     --bg: #f4f3ef; --panel: #ffffff; --ink: #1d1d1b; --muted: #6d6b64;
     --line: #e2e0d8; --accent: #d9480f; --accent-ink: #ffffff;
     --ok: #2b8a3e; --warn: #c27c0e; --bad: #c92a2a; --soft: #f1efe8;
+    --wave: #5f5b52; --grid: rgba(29, 29, 27, .16); --bar: rgba(217, 72, 15, .8);
+    --head: #1d1d1b;
     --mono: ui-monospace, "SF Mono", Menlo, monospace;
   }
   @media (prefers-color-scheme: dark) {
@@ -16,6 +19,8 @@
       --bg: #161614; --panel: #201f1c; --ink: #ecebe6; --muted: #9a978e;
       --line: #34322d; --accent: #ff6b2c; --accent-ink: #1a0d05;
       --ok: #69db7c; --warn: #ffc94d; --bad: #ff8787; --soft: #2a2925;
+      --wave: #b9b5a9; --grid: rgba(236, 235, 230, .16); --bar: rgba(255, 107, 44, .85);
+      --head: #ffffff;
     }
   }
   * { box-sizing: border-box; }
@@ -23,8 +28,8 @@
     margin: 0; background: var(--bg); color: var(--ink);
     font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
   }
-  main { max-width: 880px; margin: 0 auto; padding: 28px 16px 64px; }
-  header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 20px; }
+  main { max-width: 980px; margin: 0 auto; padding: 28px 16px 64px; }
+  header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
   h1 { font-size: 26px; margin: 0; letter-spacing: -0.02em; }
   header p { margin: 0; color: var(--muted); }
   h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .08em;
@@ -39,6 +44,7 @@
   button.primary { background: var(--accent); color: var(--accent-ink);
                    border-color: var(--accent); font-weight: 600; padding: 11px 22px; }
   button.link { background: none; border: none; padding: 2px 6px; color: var(--muted); }
+  button.small { padding: 4px 10px; font-size: 13px; }
 
   #drop { border: 2px dashed var(--line); border-radius: 12px; padding: 22px;
           text-align: center; color: var(--muted); transition: .15s; }
@@ -51,7 +57,7 @@
 
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px 24px; }
   .field label.title { display: block; font-weight: 600; margin-bottom: 6px; }
-  .field .hint { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  .hint { color: var(--muted); font-size: 13px; margin-top: 4px; }
   select, input[type=number], input[type=text] {
     font: inherit; color: var(--ink); background: var(--panel);
     border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; width: 100%;
@@ -72,23 +78,52 @@
          background: var(--soft); border-radius: 8px; padding: 10px; max-height: 220px;
          overflow: auto; margin-top: 8px; }
 
-  .card { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-top: 12px; }
+  /* ---- editor griglia ---- */
+  #editor { margin-bottom: 18px; }
+  .ed-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .ed-head h3 { margin: 0; font-size: 18px; }
+  .ed-head .artist { color: var(--muted); }
+  .toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 12px 0 8px; }
+  .toolbar .sep { flex: 1; }
+  #playBtn { min-width: 92px; font-weight: 600; }
+  #time { font-family: var(--mono); font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .wavebox { position: relative; height: 190px; background: var(--soft);
+             border-radius: 10px; overflow: hidden; cursor: grab; touch-action: none; }
+  .wavebox.dragging { cursor: grabbing; }
+  .wavebox canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #edMsg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+           color: var(--muted); pointer-events: none; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+  #edSummary { margin-top: 12px; }
+  #edSummary .stats { margin: 0 0 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .chip { font-family: var(--mono); font-size: 12px; padding: 3px 9px; border-radius: 99px;
+          border: 1px solid var(--bad); color: var(--bad); background: none; }
+  .chip:hover { background: var(--soft); }
+
+  /* ---- risultati ---- */
+  .tabs { display: flex; gap: 4px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+  .tabs button { border: none; border-radius: 8px 8px 0 0; background: none; color: var(--muted);
+                 padding: 8px 12px; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tabs button.active { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+  .card { border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; margin-top: 10px; }
+  .card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
   .card-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
-  .card h3 { margin: 0; font-size: 17px; }
-  .card .artist { color: var(--muted); }
-  .bpm { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .card h3 { margin: 0; font-size: 16px; }
+  .card .artist { color: var(--muted); font-size: 14px; }
+  .bpm { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .bpm small { font-size: 13px; color: var(--muted); font-weight: 400; }
-  .stats { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 10px 0; font-size: 13px; color: var(--muted); }
+  .stats { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 8px 0; font-size: 13px; color: var(--muted); }
   .stats b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
-  .badge { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 99px; }
+  .badge { display: inline-block; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 99px; }
   .badge.ok { color: var(--ok); border: 1px solid var(--ok); }
   .badge.warn { color: var(--warn); border: 1px solid var(--warn); }
   .badge.bad { color: var(--bad); border: 1px solid var(--bad); }
-  audio { width: 100%; margin-top: 4px; }
-  .card-actions { display: flex; gap: 8px; margin-top: 8px; }
+  .card-actions { display: flex; gap: 8px; }
   .empty { color: var(--muted); }
   .error { color: var(--bad); }
-  @media (max-width: 520px) { .card-head { flex-direction: column; } }
+  @media (max-width: 560px) { .card-head { flex-direction: column; } .wavebox { height: 150px; } }
 </style>
 </head>
 <body>
@@ -172,7 +207,7 @@
       <div class="field">
         <label class="title">Controllo qualità</label>
         <label class="check"><input type="checkbox" id="verify" checked>
-          <span>Misura la precisione del risultato<br><span class="hint">un po' più lento</span></span></label>
+          <span>Misura la precisione e mostra i beat sulla griglia<br><span class="hint">un po' più lento</span></span></label>
       </div>
 
       <div class="field">
@@ -201,6 +236,42 @@
 
   <section id="resultsBox" hidden>
     <h2>3 · Risultati</h2>
+
+    <div id="editor" hidden>
+      <div class="ed-head">
+        <div><h3 id="edTitle"></h3><span class="artist" id="edArtist"></span></div>
+        <div class="bpm" id="edBpm"></div>
+      </div>
+      <div class="toolbar">
+        <button id="playBtn">▶ Play</button>
+        <span id="time">0:00.0 / 0:00.0</span>
+        <label class="check" style="align-items:center"><input type="checkbox" id="metro" style="margin:0"> Metronomo</label>
+        <span class="sep"></span>
+        <button class="small" id="zoomOut" title="Riduci">−</button>
+        <button class="small" id="zoomIn" title="Ingrandisci">+</button>
+        <button class="small" id="zoomBars">4 battute</button>
+        <button class="small" id="zoomAll">Tutto</button>
+      </div>
+      <div class="wavebox" id="wavebox">
+        <canvas id="wave"></canvas>
+        <canvas id="head"></canvas>
+        <div id="edMsg"></div>
+      </div>
+      <div class="legend">
+        <span><i style="background:var(--bar)"></i>inizio battuta (griglia Rekordbox)</span>
+        <span><i style="background:var(--grid)"></i>beat della griglia</span>
+        <span><i style="background:var(--ok)"></i>beat rilevato entro 10 ms</span>
+        <span><i style="background:var(--warn)"></i>10–30 ms</span>
+        <span><i style="background:var(--bad)"></i>oltre 30 ms</span>
+      </div>
+      <div class="hint">Trascina per spostarti, rotella o pizzico per lo zoom, clic per posizionare la riproduzione, barra spaziatrice per play/pausa.</div>
+      <div id="edSummary"></div>
+    </div>
+
+    <div class="tabs">
+      <button id="tabLast" class="active">Ultima elaborazione</button>
+      <button id="tabAll">Collezione</button>
+    </div>
     <div id="results"></div>
     <p class="hint" style="margin-top:14px">
       In Rekordbox: <i>File → Importa → Importa collezione</i> e scegli <code>rekordbox.xml</code>
@@ -214,6 +285,7 @@ const $ = (id) => document.getElementById(id);
 const OPTS = ["round", "every", "format", "bitrate", "offset", "device", "verify", "bpm"];
 let files = [];
 let polling = null;
+let lastReports = [], collection = [], tab = "last";
 
 // ---------------------------------------------------------------- utilità
 async function api(path, body) {
@@ -227,8 +299,16 @@ async function api(path, body) {
   return data;
 }
 const fmt = (n, d = 2) => Number(n).toLocaleString("it-IT", { minimumFractionDigits: d, maximumFractionDigits: d });
+const signed = (n, d = 0) => (n > 0 ? "+" : n < 0 ? "−" : "") + fmt(Math.abs(n), d);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const base = (p) => p.split("/").pop();
+const clamp = (x, lo, hi) => Math.min(Math.max(x, lo), hi);
+const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function fmtTime(t) {
+  const tenths = Math.round(Math.max(0, t) * 10);
+  const m = Math.floor(tenths / 600), s = (tenths % 600) / 10;
+  return `${m}:${s.toFixed(1).padStart(4, "0")}`;
+}
 
 function save() {
   const o = {};
@@ -285,12 +365,16 @@ drop.ondrop = async (e) => {
 };
 
 // ---------------------------------------------------------------- opzioni
-document.querySelectorAll("select, input").forEach((el) => el.addEventListener("change", () => { syncUI(); save(); }));
+document.querySelectorAll("section select, section input:not(#metro)").forEach((el) =>
+  el.addEventListener("change", () => { syncUI(); save(); }));
 $("pickOut").onclick = async () => {
   const { path } = await api("/api/pick-folder", {});
-  if (path) { $("outdir").value = path; save(); }
+  if (path) { $("outdir").value = path; save(); await loadCollection(); renderResults(); }
 };
-$("openOut").onclick = () => api("/api/reveal", {});
+$("openOut").onclick = async () => {
+  try { await api("/api/reveal", { outdir: $("outdir").value }); }
+  catch (err) { $("status").textContent = err.message; }
+};
 
 // ---------------------------------------------------------------- elaborazione
 $("start").onclick = async () => {
@@ -306,7 +390,6 @@ $("start").onclick = async () => {
   try {
     await api("/api/run", { files, options, outdir: $("outdir").value });
   } catch (err) { $("status").innerHTML = `<span class="error">${esc(err.message)}</span>`; return; }
-  $("resultsBox").hidden = true;
   $("cancel").hidden = false;
   $("progress").hidden = false;
   $("progress").removeAttribute("value");
@@ -321,8 +404,7 @@ async function poll() {
   $("log").textContent = s.log.join("\n") || "Caricamento del modello…";
   $("log").scrollTop = $("log").scrollHeight;
   if (s.state === "running") {
-    const cur = Math.max(s.current, 1);
-    $("status").textContent = `Elaborazione brano ${cur} di ${s.total}…`;
+    $("status").textContent = `Elaborazione brano ${Math.max(s.current, 1)} di ${s.total}…`;
     $("progress").max = s.total;
     if (s.current) $("progress").value = s.current - 0.5;
     return;
@@ -335,40 +417,384 @@ async function poll() {
   else if (s.state === "done") $("status").textContent =
     `Fatto: ${s.reports.length} ${s.reports.length === 1 ? "brano" : "brani"}` + (failed ? `, ${failed} non riusciti (vedi dettagli).` : ".");
   else $("status").innerHTML = `<span class="error">Qualcosa è andato storto: apri "Dettagli tecnici".</span>`;
-  renderResults(s.reports);
+  lastReports = s.reports;
+  await loadCollection();
+  if (lastReports.length) { tab = "last"; renderResults(); openEditor(lastReports[0]); }
+  else renderResults();
   syncUI();
 }
 
 // ---------------------------------------------------------------- risultati
+async function loadCollection() {
+  try {
+    const q = new URLSearchParams({ outdir: $("outdir").value });
+    collection = (await api(`/api/collection?${q}`)).reports.slice().reverse();
+  } catch { collection = []; }
+}
 function quality(v) {
   if (!v) return "";
   const m = v.err_median_ms;
   const [cls, txt] = m < 8 ? ["ok", "Ottimo"] : m < 15 ? ["warn", "Buono"] : ["bad", "Da controllare"];
   return `<span class="badge ${cls}" title="errore mediano ${fmt(m, 1)} ms, massimo ${fmt(v.err_max_ms, 1)} ms">${txt}</span>`;
 }
-function renderResults(reports) {
-  if (!reports.length) return;
-  $("resultsBox").hidden = false;
-  $("results").innerHTML = reports.map((r, i) => {
-    const [lo, hi] = r.local_bpm_range;
-    const v = r.verify;
-    return `<div class="card">
+function statsHTML(r) {
+  const [lo, hi] = r.local_bpm_range;
+  const v = r.verify;
+  return `<span>Il batterista oscillava tra <b>${fmt(lo)}</b> e <b>${fmt(hi)}</b> BPM</span>
+    <span>Scarto massimo corretto <b>${fmt(r.drift_max_ms, 0)} ms</b></span>
+    ${v ? `<span>Precisione finale <b>${fmt(v.err_median_ms, 1)} ms</b> ${quality(v)}</span>` : ""}`;
+}
+function renderResults() {
+  const list = tab === "last" ? lastReports : collection;
+  $("resultsBox").hidden = !lastReports.length && !collection.length;
+  $("tabLast").classList.toggle("active", tab === "last");
+  $("tabAll").classList.toggle("active", tab === "all");
+  $("tabLast").textContent = `Ultima elaborazione (${lastReports.length})`;
+  $("tabAll").textContent = `Collezione (${collection.length})`;
+  if (!list.length) {
+    $("results").innerHTML = `<p class="empty">${tab === "last" ? "Nessuna elaborazione in questa sessione." : "La cartella di uscita non contiene ancora brani."}</p>`;
+    return;
+  }
+  const sel = ed.report?.output;
+  $("results").innerHTML = list.map((r, i) => `
+    <div class="card ${r.output === sel ? "selected" : ""}">
       <div class="card-head">
         <div><h3>${esc(r.title)}</h3><div class="artist">${esc(r.artist || "")}</div></div>
         <div class="bpm"><small>${fmt(r.est_bpm)} →</small> ${fmt(r.target_bpm)} <small>BPM</small></div>
       </div>
-      <div class="stats">
-        <span>Il batterista oscillava tra <b>${fmt(lo)}</b> e <b>${fmt(hi)}</b> BPM</span>
-        <span>Scarto massimo corretto <b>${fmt(r.drift_max_ms, 0)} ms</b></span>
-        ${v ? `<span>Precisione finale <b>${fmt(v.err_median_ms, 1)} ms</b> ${quality(v)}</span>` : ""}
+      <div class="stats">${statsHTML(r)}</div>
+      <div class="card-actions">
+        <button class="small" data-open="${i}">Apri nella griglia</button>
+        <button class="small link" data-reveal="${i}">Mostra nel Finder</button>
       </div>
-      <audio controls preload="none" src="/api/audio?path=${encodeURIComponent(r.output)}"></audio>
-      <div class="card-actions"><button data-reveal="${i}">Mostra nel Finder</button></div>
-    </div>`;
-  }).join("");
+    </div>`).join("");
+  $("results").querySelectorAll("[data-open]").forEach((b) =>
+    b.onclick = () => { openEditor(list[+b.dataset.open]); $("editor").scrollIntoView({ behavior: "smooth", block: "start" }); });
   $("results").querySelectorAll("[data-reveal]").forEach((b) =>
-    b.onclick = () => api("/api/reveal", { path: reports[+b.dataset.reveal].output }));
+    b.onclick = () => api("/api/reveal", { path: list[+b.dataset.reveal].output }));
 }
+$("tabLast").onclick = () => { tab = "last"; renderResults(); };
+$("tabAll").onclick = () => { tab = "all"; renderResults(); };
+
+// ---------------------------------------------------------------- editor griglia
+const BLOCK = 128;           // campioni per blocco di picchi
+const ed = {
+  report: null, buf: null, mono: null, mins: null, maxs: null, sr: 44100, dur: 0,
+  view: { start: 0, dur: 1 }, beats: [], errs: [], token: 0,
+  ctx: null, src: null, t0: 0, offset: 0, playing: false, metro: false, nextK: 0,
+};
+const period = () => 60 / ed.report.target_bpm;
+const gridStart = () => ed.report.first_downbeat;
+const gridTime = (k) => gridStart() + k * period();
+const pos = () => ed.playing ? ed.ctx.currentTime - ed.t0 : ed.offset;
+
+async function openEditor(r) {
+  pause();
+  const token = ++ed.token;
+  ed.report = r; ed.buf = null; ed.offset = 0;
+  $("editor").hidden = false;
+  $("edTitle").textContent = r.title;
+  $("edArtist").textContent = r.artist || "";
+  $("edBpm").innerHTML = `${fmt(r.target_bpm)} <small>BPM</small>`;
+  $("edMsg").textContent = "Caricamento forma d'onda…";
+  $("edSummary").innerHTML = "";
+  clearCanvas($("wave")); clearCanvas($("head"));
+  renderResults();
+  try {
+    ed.ctx ??= new AudioContext();
+    const res = await fetch(`/api/audio?pcm=1&path=${encodeURIComponent(r.output)}`);
+    if (!res.ok) throw new Error(`file non disponibile (${res.status})`);
+    const buf = await ed.ctx.decodeAudioData(await res.arrayBuffer());
+    if (token !== ed.token) return;
+    ed.buf = buf; ed.dur = buf.duration; ed.sr = buf.sampleRate;
+    buildPeaks(buf);
+  } catch (err) {
+    if (token === ed.token) $("edMsg").textContent = `Impossibile caricare l'audio: ${err.message}`;
+    return;
+  }
+  $("edMsg").textContent = "";
+  ed.view = { start: 0, dur: ed.dur };
+  analyzeBeats();
+  drawAll();
+}
+
+function buildPeaks(buf) {
+  const n = buf.length, ch = buf.numberOfChannels;
+  const mono = new Float32Array(n);
+  for (let c = 0; c < ch; c++) {
+    const d = buf.getChannelData(c);
+    for (let i = 0; i < n; i++) mono[i] += d[i] / ch;
+  }
+  const nb = Math.ceil(n / BLOCK);
+  const mins = new Float32Array(nb), maxs = new Float32Array(nb);
+  for (let b = 0; b < nb; b++) {
+    let mn = 0, mx = 0;
+    const end = Math.min(n, (b + 1) * BLOCK);
+    for (let i = b * BLOCK; i < end; i++) { const v = mono[i]; if (v < mn) mn = v; if (v > mx) mx = v; }
+    mins[b] = mn; maxs[b] = mx;
+  }
+  Object.assign(ed, { mono, mins, maxs });
+}
+
+function analyzeBeats() {
+  const v = ed.report.verify;
+  ed.beats = (v && v.beats) || [];
+  ed.errs = ed.beats.map((t) => (t - gridTime(Math.round((t - gridStart()) / period()))) * 1000);
+  const box = $("edSummary");
+  if (!ed.beats.length) {
+    box.innerHTML = `<p class="hint">I beat rilevati non sono disponibili per questo brano: rielaboralo con
+      "Controllo qualità" attivo per vederli sulla griglia. La griglia e la forma d'onda sono comunque corrette.</p>`;
+    return;
+  }
+  const abs = ed.errs.map(Math.abs);
+  const within = abs.filter((e) => e <= 10).length / abs.length * 100;
+  const sorted = ed.errs.slice().sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  const out = ed.beats.map((t, i) => ({ t, e: ed.errs[i] })).filter((b) => Math.abs(b.e) > 30);
+  let html = `<div class="stats">
+      <span>Beat sulla griglia (entro 10 ms) <b>${fmt(within, 0)}%</b></span>
+      <span>Scarto medio dalla griglia <b>${signed(median)} ms</b></span>
+      <span>Punti oltre 30 ms <b>${out.length}</b></span></div>`;
+  if (Math.abs(median) >= 5)
+    html += `<p class="hint">La griglia sembra spostata di ${signed(median)} ms rispetto ai colpi: se in Rekordbox la vedi
+      ${median > 0 ? "in anticipo" : "in ritardo"}, rielabora con "Sposta il primo downbeat" ${median > 0 ? "aumentato" : "diminuito"} di ${fmt(Math.abs(median), 0)} ms.</p>`;
+  if (out.length)
+    html += `<div class="hint">Punti da controllare (clic per ascoltarli):</div>
+      <div class="chips">${out.slice(0, 40).map((b) =>
+        `<button class="chip" data-t="${b.t}">${fmtTime(b.t)} · ${signed(b.e)} ms</button>`).join("")}</div>`;
+  else html += `<p class="hint">Nessun punto oltre 30 ms: la griglia segue il brano dall'inizio alla fine.</p>`;
+  box.innerHTML = html;
+  box.querySelectorAll(".chip").forEach((c) => c.onclick = () => focusAt(+c.dataset.t));
+}
+
+function focusAt(t) {
+  const p = period();
+  setView(t - 4 * p, 8 * p);
+  play(Math.max(0, t - 4 * p));
+}
+
+// ---- disegno
+function setupCanvas(c) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) {
+    c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+  }
+  const g = c.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  return [g, w, h];
+}
+function clearCanvas(c) { setupCanvas(c); }
+const xOf = (t, w) => (t - ed.view.start) / ed.view.dur * w;
+
+function drawAll() { drawWave(); drawHead(); }
+
+function drawWave() {
+  if (!ed.buf) return;
+  const [g, w, h] = setupCanvas($("wave"));
+  const top = 18, bottom = 14;
+  const mid = top + (h - top - bottom) / 2, amp = (h - top - bottom) / 2 * 0.95;
+  const { start, dur } = ed.view;
+
+  // forma d'onda
+  g.fillStyle = cssVar("--wave");
+  const spp = dur * ed.sr / w;
+  const n = ed.mono.length;
+  for (let x = 0; x < w; x++) {
+    let i0 = Math.floor((start + x / w * dur) * ed.sr);
+    let i1 = Math.floor((start + (x + 1) / w * dur) * ed.sr);
+    i0 = clamp(i0, 0, n); i1 = clamp(Math.max(i1, i0 + 1), 0, n);
+    if (i0 >= n) break;
+    let mn = 0, mx = 0;
+    if (spp >= BLOCK * 2) {
+      const b1 = Math.min(ed.maxs.length, Math.ceil(i1 / BLOCK));
+      for (let b = Math.floor(i0 / BLOCK); b < b1; b++) {
+        if (ed.mins[b] < mn) mn = ed.mins[b];
+        if (ed.maxs[b] > mx) mx = ed.maxs[b];
+      }
+    } else {
+      for (let i = i0; i < i1; i++) { const v = ed.mono[i]; if (v < mn) mn = v; if (v > mx) mx = v; }
+    }
+    g.fillRect(x, mid - mx * amp, 1, Math.max(1, (mx - mn) * amp));
+  }
+
+  // griglia (come in Rekordbox: battuta = 4 beat dal primo downbeat)
+  const p = period();
+  const pxBeat = p / dur * w, pxBar = pxBeat * 4;
+  const barEvery = pxBar >= 36 ? 1 : 2 ** Math.ceil(Math.log2(36 / pxBar));   // etichette leggibili
+  const k0 = Math.ceil((start - gridStart()) / p), k1 = Math.floor((start + dur - gridStart()) / p);
+  g.font = "11px -apple-system, sans-serif";
+  g.textBaseline = "top";
+  for (let k = k0; k <= k1; k++) {
+    const isBar = ((k % 4) + 4) % 4 === 0;
+    const bar = Math.floor(k / 4);
+    if (!isBar && pxBeat < 5) continue;
+    if (isBar && pxBar < 4 && bar % barEvery) continue;
+    const thick = isBar && pxBeat >= 20;
+    const x = Math.round(xOf(gridTime(k), w)) + (thick ? 0 : 0.5);
+    g.strokeStyle = cssVar(isBar ? "--bar" : "--grid");
+    g.lineWidth = thick ? 2 : 1;
+    g.beginPath(); g.moveTo(x, isBar ? 0 : top); g.lineTo(x, h - bottom); g.stroke();
+    if (isBar && bar >= 0 && bar % barEvery === 0) {
+      g.fillStyle = cssVar("--bar");
+      g.fillText(String(bar + 1), x + 3, 3);
+    }
+  }
+
+  // beat rilevati sull'output, colorati per distanza dalla griglia
+  const colors = { ok: cssVar("--ok"), warn: cssVar("--warn"), bad: cssVar("--bad") };
+  for (let i = 0; i < ed.beats.length; i++) {
+    const t = ed.beats[i];
+    if (t < start || t > start + dur) continue;
+    const e = Math.abs(ed.errs[i]);
+    const c = e <= 10 ? colors.ok : e <= 30 ? colors.warn : colors.bad;
+    const x = xOf(t, w);
+    if (e > 30) {
+      g.globalAlpha = 0.35; g.fillStyle = c;
+      g.fillRect(Math.round(x) - 1, top, 2, h - top - bottom);
+      g.globalAlpha = 1;
+    }
+    g.fillStyle = c;
+    g.beginPath(); g.moveTo(x, h - bottom + 1); g.lineTo(x - 5, h - 1); g.lineTo(x + 5, h - 1); g.closePath(); g.fill();
+  }
+}
+
+function drawHead() {
+  const [g, w, h] = setupCanvas($("head"));
+  if (!ed.buf) return;
+  const t = pos();
+  $("time").textContent = `${fmtTime(t)} / ${fmtTime(ed.dur)}`;
+  const x = xOf(t, w);
+  if (x < 0 || x > w) return;
+  g.fillStyle = cssVar("--head");
+  g.fillRect(Math.round(x) - 1, 0, 2, h);
+}
+
+function setView(start, dur) {
+  if (!ed.buf) return;
+  dur = clamp(dur, 0.25, ed.dur);
+  ed.view = { start: clamp(start, 0, ed.dur - dur), dur };
+  drawAll();
+}
+function zoom(f, centerT) {
+  const { start, dur } = ed.view;
+  const c = centerT ?? (ed.playing ? pos() : start + dur / 2);
+  const nd = clamp(dur * f, 0.25, ed.dur);
+  setView(c - (c - start) * nd / dur, nd);
+}
+$("zoomIn").onclick = () => zoom(0.5);
+$("zoomOut").onclick = () => zoom(2);
+$("zoomAll").onclick = () => setView(0, ed.dur);
+$("zoomBars").onclick = () => { const p = period(), c = pos(); setView(c - 2 * p, 16 * p); };
+
+// ---- interazione con la forma d'onda
+const box = $("wavebox");
+let drag = null;
+box.addEventListener("pointerdown", (e) => {
+  if (!ed.buf) return;
+  box.setPointerCapture(e.pointerId);
+  drag = { x: e.clientX, start: ed.view.start, moved: false };
+});
+box.addEventListener("pointermove", (e) => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x;
+  if (Math.abs(dx) > 3) { drag.moved = true; box.classList.add("dragging"); }
+  if (drag.moved) setView(drag.start - dx / box.clientWidth * ed.view.dur, ed.view.dur);
+});
+box.addEventListener("pointerup", (e) => {
+  if (!drag) return;
+  const r = box.getBoundingClientRect();
+  if (!drag.moved) seek(ed.view.start + (e.clientX - r.left) / r.width * ed.view.dur);
+  drag = null; box.classList.remove("dragging");
+});
+box.addEventListener("wheel", (e) => {
+  if (!ed.buf) return;
+  e.preventDefault();
+  const r = box.getBoundingClientRect();
+  if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+    setView(ed.view.start + e.deltaX / r.width * ed.view.dur, ed.view.dur);
+  } else {
+    const t = ed.view.start + (e.clientX - r.left) / r.width * ed.view.dur;
+    zoom(Math.exp(e.deltaY * (e.ctrlKey ? 0.01 : 0.002)), t);
+  }
+}, { passive: false });
+window.addEventListener("resize", drawAll);
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawAll);
+
+// ---- riproduzione e metronomo (Web Audio: clic e musica sullo stesso orologio)
+function stopSource() {
+  if (!ed.src) return;
+  const s = ed.src; ed.src = null; s.onended = null;
+  try { s.stop(); } catch {}
+}
+function play(from = pos()) {
+  if (!ed.buf) return;
+  stopSource();
+  ed.ctx.resume();
+  from = clamp(from, 0, ed.dur);
+  const src = ed.ctx.createBufferSource();
+  src.buffer = ed.buf;
+  src.connect(ed.ctx.destination);
+  src.start(0, from);
+  src.onended = () => { if (ed.src === src) { ed.src = null; ed.playing = false; ed.offset = 0; updatePlayBtn(); drawHead(); } };
+  ed.src = src; ed.t0 = ed.ctx.currentTime - from; ed.playing = true;
+  ed.nextK = Math.ceil((from - gridStart()) / period());
+  updatePlayBtn();
+  requestAnimationFrame(tick);
+}
+function pause() {
+  if (!ed.playing) return;
+  ed.offset = pos();
+  stopSource();
+  ed.playing = false;
+  updatePlayBtn();
+  drawHead();
+}
+function seek(t) {
+  t = clamp(t, 0, ed.dur);
+  if (ed.playing) play(t); else { ed.offset = t; drawHead(); }
+}
+function updatePlayBtn() { $("playBtn").textContent = ed.playing ? "❚❚ Pausa" : "▶ Play"; }
+$("playBtn").onclick = () => ed.playing ? pause() : play();
+
+function tick() {
+  if (!ed.playing) return;
+  const t = pos(), { start, dur } = ed.view;
+  if (t > start + dur * 0.95 || t < start) setView(t - dur * 0.05, dur);   // segui la riproduzione
+  else drawHead();
+  requestAnimationFrame(tick);
+}
+
+function click(when, accent) {
+  const ctx = ed.ctx, osc = ctx.createOscillator(), gain = ctx.createGain();
+  osc.frequency.value = accent ? 1760 : 1100;
+  gain.gain.setValueAtTime(0.0001, when);
+  gain.gain.exponentialRampToValueAtTime(accent ? 0.7 : 0.45, when + 0.002);
+  gain.gain.exponentialRampToValueAtTime(0.0001, when + 0.05);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start(when); osc.stop(when + 0.06);
+}
+setInterval(() => {
+  if (!ed.playing || !ed.metro) return;
+  const now = pos();
+  while (gridTime(ed.nextK) < now + 0.15) {
+    const t = gridTime(ed.nextK);
+    if (t >= now - 0.005 && t <= ed.dur) click(ed.t0 + t, ((ed.nextK % 4) + 4) % 4 === 0);
+    ed.nextK++;
+  }
+}, 30);
+$("metro").onchange = () => {
+  ed.metro = $("metro").checked;
+  if (ed.report) ed.nextK = Math.ceil((pos() - gridStart()) / period());
+};
+
+document.addEventListener("keydown", (e) => {
+  if (e.code !== "Space" || !ed.buf || $("editor").hidden) return;
+  if (["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(e.target.tagName)) return;
+  e.preventDefault();
+  ed.playing ? pause() : play();
+});
 
 // ---------------------------------------------------------------- avvio
 (async () => {
@@ -376,8 +802,13 @@ function renderResults(reports) {
   load();
   syncUI();
   const s = await api("/api/status");
-  if (s.state === "running") { polling = setInterval(poll, 700); $("cancel").hidden = false; $("progress").hidden = false; }
-  else renderResults(s.reports);
+  await loadCollection();
+  if (s.state === "running") {
+    polling = setInterval(poll, 700); $("cancel").hidden = false; $("progress").hidden = false;
+  }
+  lastReports = s.reports;
+  tab = lastReports.length ? "last" : "all";
+  renderResults();
 })();
 </script>
 </body>
