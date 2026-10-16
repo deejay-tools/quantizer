@@ -9,8 +9,10 @@ Pipeline: ffmpeg → beat_this (beat/downbeat) → riparazione beat → tempo ma
 
 ## Setup (macOS Apple Silicon, senza Xcode)
 
-Homebrew non compila più bottle per macOS 14, quindi `brew install ffmpeg` prova a
-compilare e chiede Xcode. Qui si usano solo binari precompilati.
+Homebrew non fornisce più bottle (binari precompilati) per macOS 14, quindi
+`brew install ffmpeg` prova a compilare dai sorgenti e chiede Xcode. Qui si usano solo
+binari precompilati, e il ffmpeg di Homebrew già installato (usato da altre app)
+resta com'è: **non lanciare `brew install ffmpeg` né `brew upgrade`**.
 
 ```sh
 # 1. uv (in ~/.local/bin, nessun sudo)
@@ -90,3 +92,18 @@ i brani di cui hai cancellato il file vengono tolti.
 | `--device` | `cpu` o `mps` (su M1, `mps` è circa 2,3× più veloce nell'analisi) |
 | `--outdir` | cartella di uscita, default `quantized` |
 | `--verify` | rianalizza l'output e misura l'errore residuo |
+
+## File del progetto
+
+| Percorso | Contenuto |
+|---|---|
+| `quantize.py` | pipeline completa, usabile da sola da terminale |
+| `gui.py`, `gui/index.html` | interfaccia locale (server Flask su 127.0.0.1:8765 + pagina) |
+| `Quantizer.command` | avvio della GUI con doppio clic |
+| `bin/` | ffmpeg, ffprobe, rubberband precompilati (non nel repo) |
+| `.venv/` | Python 3.12 e dipendenze (non nel repo) |
+| `quantized/` | brani elaborati, `rekordbox.xml`, `report.json` (non nel repo) |
+| `inbox/` | copie dei file trascinati nella GUI (non nel repo) |
+
+La GUI tiene una copia WAV dei brani aperti nella griglia in
+`$TMPDIR/quantizer-pcm/`: è temporanea e si può cancellare in qualsiasi momento.

@@ -4,3 +4,12 @@ quantized/
 __pycache__/
 .DS_Store
 inbox/
+
+# file audio di prova o da elaborare
+*.mp3
+*.wav
+*.aif
+*.aiff
+*.flac
+*.m4a
+*.ogg
