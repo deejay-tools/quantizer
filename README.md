@@ -126,3 +126,20 @@ i brani di cui hai cancellato il file vengono tolti.
 
 La GUI tiene una copia WAV dei brani aperti nella griglia in
 `$TMPDIR/quantizer-pcm/`: è temporanea e si può cancellare in qualsiasi momento.
+
+## Licenza
+
+Il codice di questo repository è rilasciato con licenza [MIT](LICENSE).
+
+Gli strumenti esterni **non** sono inclusi nel repository: si scaricano a parte (vedi
+Setup) e restano sotto le loro licenze.
+
+| Componente | Licenza | Come viene usato |
+|---|---|---|
+| [beat_this](https://github.com/CPJKU/beat_this) (codice e pesi del modello) | MIT | libreria Python |
+| [Rubber Band](https://breakfastquay.com/rubberband/) | GPL v2+ o licenza commerciale | programma esterno, eseguito da riga di comando |
+| [FFmpeg](https://ffmpeg.org/) (build statiche di osxexperts.net) | LGPL/GPL secondo la build | programma esterno, eseguito da riga di comando |
+| PyTorch, torchaudio, NumPy, soundfile, Flask | BSD/MIT | librerie Python |
+
+Chi distribuisce Quantizer insieme a Rubber Band o FFmpeg deve rispettare anche le
+loro licenze.
