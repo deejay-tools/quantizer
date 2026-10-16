@@ -263,6 +263,34 @@ def audio():
     return send_file(p, conditional=True)
 
 
+@app.post("/api/grid")
+def save_grid():
+    """Sposta la griglia di un brano: aggiorna report.json e rigenera rekordbox.xml."""
+    data = request.get_json(force=True)
+    out = known(data.get("path"))
+    try:
+        start = float(data["first_downbeat"])
+    except (KeyError, TypeError, ValueError):
+        return jsonify(error="Posizione della griglia non valida"), 400
+    outdir = out.parent
+    with job.lock:
+        if job.state == "running" and job.outdir.resolve() == outdir.resolve():
+            return jsonify(error="Elaborazione in corso in questa cartella: riprova alla fine"), 409
+        reports = read_collection(outdir)
+        entry = next((r for r in reports if Path(r["output"]).resolve() == out), None)
+        if entry is None:
+            return jsonify(error="Brano non trovato in report.json"), 404
+        bar = 4 * 60 / entry["target_bpm"]
+        if start < 0:   # Rekordbox vuole l'inizio dentro il brano: stessa fase, battuta dopo
+            start %= bar
+        entry["first_downbeat"] = round(start, 3)
+        quantize.write_rekordbox_xml(reports, outdir / "rekordbox.xml")
+        tmp = outdir / "report.json.tmp"
+        tmp.write_text(json.dumps(reports, indent=2, ensure_ascii=False))
+        tmp.replace(outdir / "report.json")
+    return jsonify(first_downbeat=entry["first_downbeat"], total=len(reports))
+
+
 @app.post("/api/reveal")
 def reveal():
     data = request.get_json(force=True)

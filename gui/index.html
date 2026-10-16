@@ -90,6 +90,16 @@
   .wavebox { position: relative; height: 190px; background: var(--soft);
              border-radius: 10px; overflow: hidden; cursor: grab; touch-action: none; }
   .wavebox.dragging { cursor: grabbing; }
+  .wavebox.gridmode { cursor: ew-resize; box-shadow: 0 0 0 2px var(--accent) inset; }
+  .gridbar { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 10px 0 4px;
+             padding: 8px 10px; border-radius: 10px; background: var(--soft); }
+  .gridbar .sep { flex: 1; }
+  .gridbar button.small { background: var(--panel); }
+  #gridMode.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  #gridSave:not(:disabled) { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+  #gridInfo { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  #gridInfo b { color: var(--ink); }
+  #gridInfo.dirty b { color: var(--accent); }
   .wavebox canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
   #edMsg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
            color: var(--muted); pointer-events: none; }
@@ -264,7 +274,21 @@
         <span><i style="background:var(--warn)"></i>10–30 ms</span>
         <span><i style="background:var(--bad)"></i>oltre 30 ms</span>
       </div>
-      <div class="hint">Trascina per spostarti, rotella o pizzico per lo zoom, clic per posizionare la riproduzione, barra spaziatrice per play/pausa.</div>
+      <div class="hint" id="waveHint"></div>
+      <div class="gridbar">
+        <button class="small" id="gridMode" title="Trascina la forma d'onda per spostare la griglia">✥ Sposta griglia</button>
+        <button class="small" data-nudge="-beat" title="Il primo tempo della battuta un beat prima">◀ 1 beat</button>
+        <button class="small" data-nudge="-10">−10 ms</button>
+        <button class="small" data-nudge="-1">−1</button>
+        <button class="small" data-nudge="1">+1</button>
+        <button class="small" data-nudge="10">+10 ms</button>
+        <button class="small" data-nudge="beat" title="Il primo tempo della battuta un beat dopo">1 beat ▶</button>
+        <button class="small" id="gridAuto" title="Centra la griglia sui beat rilevati">Allinea ai beat</button>
+        <span class="sep"></span>
+        <span id="gridInfo"></span>
+        <button class="small link" id="gridReset">Annulla</button>
+        <button class="small" id="gridSave">Salva in rekordbox.xml</button>
+      </div>
       <div id="edSummary"></div>
     </div>
 
@@ -482,16 +506,22 @@ const ed = {
   report: null, buf: null, mono: null, mins: null, maxs: null, sr: 44100, dur: 0,
   view: { start: 0, dur: 1 }, beats: [], errs: [], token: 0,
   ctx: null, src: null, t0: 0, offset: 0, playing: false, metro: false, nextK: 0,
+  grid: 0, gridMode: false,   // grid = inizio griglia in modifica (salvato in report.first_downbeat)
 };
 const period = () => 60 / ed.report.target_bpm;
-const gridStart = () => ed.report.first_downbeat;
+const gridStart = () => ed.grid;
+const gridDirty = () => ed.report && Math.abs(ed.grid - ed.report.first_downbeat) > 0.0005;
 const gridTime = (k) => gridStart() + k * period();
 const pos = () => ed.playing ? ed.ctx.currentTime - ed.t0 : ed.offset;
 
 async function openEditor(r) {
+  if (r !== ed.report && gridDirty() &&
+      !confirm("La griglia modificata non è stata salvata. Vuoi abbandonare le modifiche?")) return;
   pause();
   const token = ++ed.token;
-  ed.report = r; ed.buf = null; ed.offset = 0;
+  ed.report = r; ed.buf = null; ed.offset = 0; ed.grid = r.first_downbeat; ed.beats = []; ed.errs = [];
+  setGridMode(false);
+  updateGridInfo();
   $("editor").hidden = false;
   $("edTitle").textContent = r.title;
   $("edArtist").textContent = r.artist || "";
@@ -515,6 +545,7 @@ async function openEditor(r) {
   $("edMsg").textContent = "";
   ed.view = { start: 0, dur: ed.dur };
   analyzeBeats();
+  updateGridInfo();
   drawAll();
 }
 
@@ -556,8 +587,8 @@ function analyzeBeats() {
       <span>Scarto medio dalla griglia <b>${signed(median)} ms</b></span>
       <span>Punti oltre 30 ms <b>${out.length}</b></span></div>`;
   if (Math.abs(median) >= 5)
-    html += `<p class="hint">La griglia sembra spostata di ${signed(median)} ms rispetto ai colpi: se in Rekordbox la vedi
-      ${median > 0 ? "in anticipo" : "in ritardo"}, rielabora con "Sposta il primo downbeat" ${median > 0 ? "aumentato" : "diminuito"} di ${fmt(Math.abs(median), 0)} ms.</p>`;
+    html += `<p class="hint">La griglia è ${median > 0 ? "in anticipo" : "in ritardo"} di circa ${fmt(Math.abs(median), 0)} ms
+      rispetto ai colpi: premi "Allinea ai beat" e poi "Salva in rekordbox.xml".</p>`;
   if (out.length)
     html += `<div class="hint">Punti da controllare (clic per ascoltarli):</div>
       <div class="chips">${out.slice(0, 40).map((b) =>
@@ -694,13 +725,16 @@ let drag = null;
 box.addEventListener("pointerdown", (e) => {
   if (!ed.buf) return;
   box.setPointerCapture(e.pointerId);
-  drag = { x: e.clientX, start: ed.view.start, moved: false };
+  drag = { x: e.clientX, start: ed.view.start, grid: ed.grid, moved: false, mode: ed.gridMode ? "grid" : "pan" };
 });
 box.addEventListener("pointermove", (e) => {
   if (!drag) return;
   const dx = e.clientX - drag.x;
   if (Math.abs(dx) > 3) { drag.moved = true; box.classList.add("dragging"); }
-  if (drag.moved) setView(drag.start - dx / box.clientWidth * ed.view.dur, ed.view.dur);
+  if (!drag.moved) return;
+  const dt = dx / box.clientWidth * ed.view.dur;
+  if (drag.mode === "grid") setGrid(drag.grid + dt);
+  else setView(drag.start - dt, ed.view.dur);
 });
 box.addEventListener("pointerup", (e) => {
   if (!drag) return;
@@ -721,6 +755,67 @@ box.addEventListener("wheel", (e) => {
 }, { passive: false });
 window.addEventListener("resize", drawAll);
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawAll);
+
+// ---- regolazione della griglia
+function setGrid(s) {
+  if (!ed.report) return;
+  const bar = 4 * period();
+  if (s < 0) s += Math.ceil(-s / bar) * bar;   // stessa fase, inizio dentro il brano
+  ed.grid = s;
+  ed.nextK = Math.ceil((pos() - s) / period());
+  analyzeBeats();
+  drawAll();
+  updateGridInfo();
+}
+function updateGridInfo() {
+  if (!ed.report) return;
+  // spostamento espresso come beat interi + ms, più leggibile di "+1477 ms"
+  const d = ed.grid - ed.report.first_downbeat;
+  const beats = Math.round(d / period());
+  const ms = (d - beats * period()) * 1000;
+  const dirty = gridDirty();
+  $("gridInfo").classList.toggle("dirty", dirty);
+  $("gridInfo").innerHTML = `Inizio griglia <b>${fmt(ed.grid, 3)} s</b>` + (dirty
+    ? ` · <b>${signed(ms)} ms${beats ? ` e ${signed(beats)} beat` : ""}</b> da salvare` : "");
+  $("gridSave").disabled = !dirty;
+  $("gridReset").disabled = !dirty;
+  $("gridAuto").disabled = !ed.beats.length;
+}
+function setGridMode(on) {
+  ed.gridMode = on;
+  $("gridMode").classList.toggle("on", on);
+  box.classList.toggle("gridmode", on);
+  $("waveHint").textContent = on
+    ? "Modalità griglia: trascina la forma d'onda per spostare la griglia, frecce ←/→ per 1 ms (con Maiusc 10 ms). Clic su \"Sposta griglia\" per tornare alla navigazione."
+    : "Trascina per spostarti, rotella o pizzico per lo zoom, clic per posizionare la riproduzione, barra spaziatrice per play/pausa.";
+}
+$("gridMode").onclick = () => setGridMode(!ed.gridMode);
+document.querySelectorAll("[data-nudge]").forEach((b) => b.onclick = () => {
+  const n = b.dataset.nudge;
+  setGrid(ed.grid + (n === "beat" ? period() : n === "-beat" ? -period() : +n / 1000));
+});
+$("gridAuto").onclick = () => {
+  if (!ed.errs.length) return;
+  const sorted = ed.errs.slice().sort((a, b) => a - b);
+  setGrid(ed.grid + sorted[Math.floor(sorted.length / 2)] / 1000);
+};
+$("gridReset").onclick = () => setGrid(ed.report.first_downbeat);
+$("gridSave").onclick = async () => {
+  $("gridSave").disabled = true;
+  try {
+    const res = await api("/api/grid", { path: ed.report.output, first_downbeat: ed.grid });
+    ed.report.first_downbeat = res.first_downbeat;   // stesso oggetto delle schede risultati
+    ed.grid = res.first_downbeat;
+    updateGridInfo();
+    drawAll();
+    $("gridInfo").innerHTML += ` · <span style="color:var(--ok)">salvata: reimporta rekordbox.xml in Rekordbox</span>`;
+  } catch (err) {
+    $("gridInfo").innerHTML += ` · <span class="error">${esc(err.message)}</span>`;
+    $("gridSave").disabled = false;
+  }
+};
+window.addEventListener("beforeunload", (e) => { if (gridDirty()) e.preventDefault(); });
+setGridMode(false);
 
 // ---- riproduzione e metronomo (Web Audio: clic e musica sullo stesso orologio)
 function stopSource() {
@@ -790,8 +885,14 @@ $("metro").onchange = () => {
 };
 
 document.addEventListener("keydown", (e) => {
-  if (e.code !== "Space" || !ed.buf || $("editor").hidden) return;
-  if (["INPUT", "SELECT", "TEXTAREA", "BUTTON"].includes(e.target.tagName)) return;
+  if (!ed.buf || $("editor").hidden) return;
+  if (["INPUT", "SELECT", "TEXTAREA"].includes(e.target.tagName)) return;
+  if (ed.gridMode && (e.code === "ArrowLeft" || e.code === "ArrowRight")) {
+    e.preventDefault();
+    setGrid(ed.grid + (e.code === "ArrowRight" ? 1 : -1) * (e.shiftKey ? 0.01 : 0.001));
+    return;
+  }
+  if (e.code !== "Space" || e.target.tagName === "BUTTON") return;
   e.preventDefault();
   ed.playing ? pause() : play();
 });

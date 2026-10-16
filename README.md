@@ -58,6 +58,16 @@ rosso oltre. I punti rossi sono elencati e con un clic si ascoltano. Il metronom
 suona sulla griglia insieme alla musica. La scheda "Collezione" elenca tutti i
 brani già presenti nella cartella di uscita.
 
+Per correggere la griglia senza rielaborare l'audio:
+
+- attiva **"Sposta griglia"** e trascina la forma d'onda;
+- oppure usa ±1/±10 ms (o le frecce ←/→);
+- "◀ 1 beat ▶" sposta il "1" della battuta;
+- "Allinea ai beat" centra la griglia sui beat rilevati.
+
+**"Salva in rekordbox.xml"** aggiorna `report.json` e `rekordbox.xml`; poi reimporta
+l'XML in Rekordbox.
+
 ## Uso da terminale
 
 ```sh
