@@ -7,6 +7,11 @@ Pipeline:
   -> tempo map -> rubberband R3 --timemap -> ffmpeg (MP3 320k + tag e copertina)
   -> rekordbox.xml con griglia a BPM fisso + report.json
 
+Binari esterni (ffmpeg, ffprobe, rubberband), cercati in quest'ordine:
+  1. variabile d'ambiente QUANTIZER_FFMPEG / QUANTIZER_FFPROBE / QUANTIZER_RUBBERBAND
+  2. cartella ./bin accanto a questo script
+  3. PATH
+
 Uso:
   python quantize.py brano.mp3 [altri file...] [--every 1] [--bpm 118] [--verify]
 """
@@ -14,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -24,6 +30,11 @@ from urllib.parse import quote
 
 import numpy as np
 import soundfile as sf
+
+BIN_DIR = Path(__file__).resolve().parent / "bin"
+
+# nome -> percorso eseguibile, riempito da check_tools()
+TOOLS: dict[str, str] = {}
 
 # estensione, argomenti codec, Kind per Rekordbox, copia copertina
 FORMATS = {
@@ -40,25 +51,44 @@ FORMATS = {
 def run(cmd: list) -> subprocess.CompletedProcess:
     r = subprocess.run([str(c) for c in cmd], capture_output=True, text=True)
     if r.returncode != 0:
-        raise RuntimeError(f"{cmd[0]} fallito:\n{r.stderr[-1500:]}")
+        raise RuntimeError(f"{Path(str(cmd[0])).name} fallito:\n{r.stderr[-1500:]}")
     return r
 
 
+def find_tool(name: str) -> str | None:
+    env = os.environ.get(f"QUANTIZER_{name.upper()}")
+    if env:
+        if not (os.path.isfile(env) and os.access(env, os.X_OK)):
+            sys.exit(f"QUANTIZER_{name.upper()}={env} non è un eseguibile valido")
+        return env
+    local = BIN_DIR / name
+    if local.is_file() and os.access(local, os.X_OK):
+        return str(local)
+    return shutil.which(name)
+
+
 def check_tools() -> None:
-    missing = [t for t in ("ffmpeg", "ffprobe", "rubberband") if not shutil.which(t)]
+    missing = []
+    for name in ("ffmpeg", "ffprobe", "rubberband"):
+        path = find_tool(name)
+        if path:
+            TOOLS[name] = path
+        else:
+            missing.append(name)
     if missing:
-        sys.exit(f"Mancano: {', '.join(missing)}  ->  brew install ffmpeg rubberband")
+        sys.exit(f"Mancano: {', '.join(missing)}  ->  mettili in {BIN_DIR}, nel PATH "
+                 f"o indica il percorso con QUANTIZER_<NOME> (vedi README)")
 
 
 def read_tags(src: Path) -> dict:
-    r = run(["ffprobe", "-v", "error", "-show_entries", "format_tags=title,artist",
+    r = run([TOOLS["ffprobe"], "-v", "error", "-show_entries", "format_tags=title,artist",
              "-of", "json", src])
     tags = json.loads(r.stdout).get("format", {}).get("tags", {})
     return {k.lower(): v for k, v in tags.items()}
 
 
 def decode(src: Path, dst: Path) -> None:
-    run(["ffmpeg", "-y", "-v", "error", "-i", src, "-vn", "-c:a", "pcm_s24le", dst])
+    run([TOOLS["ffmpeg"], "-y", "-v", "error", "-i", src, "-vn", "-c:a", "pcm_s24le", dst])
 
 
 # ---------------------------------------------------------------- analisi
@@ -162,7 +192,7 @@ def process(src: Path, f2b, args, tmp: Path) -> dict:
     mapfile = tmp / "map.txt"
     mapfile.write_text("".join(f"{s} {t}\n" for s, t in plan["timemap"]))
     stretched = tmp / "out.wav"
-    run(["rubberband", "--fine", "-q", "-D", f"{plan['target_dur']:.6f}",
+    run([TOOLS["rubberband"], "--fine", "-q", "-D", f"{plan['target_dur']:.6f}",
          "--timemap", mapfile, dec, stretched])
 
     ext, codec, kind, cover = FORMATS[args.format]
@@ -170,7 +200,7 @@ def process(src: Path, f2b, args, tmp: Path) -> dict:
     dst = args.outdir / f"{src.stem} (Q {plan['target_bpm']:.2f}).{ext}"
     cover_args = (["-map", "1:v?", "-c:v", "copy", "-disposition:v", "attached_pic"]
                   if cover else [])
-    run(["ffmpeg", "-y", "-v", "error", "-i", stretched, "-i", src,
+    run([TOOLS["ffmpeg"], "-y", "-v", "error", "-i", stretched, "-i", src,
          "-map", "0:a", "-map_metadata", "1", *cover_args, *codec, dst])
 
     report = {
