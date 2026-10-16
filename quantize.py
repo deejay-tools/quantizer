@@ -168,13 +168,16 @@ def first_downbeat_target(beats: np.ndarray, downbeats: np.ndarray, plan: dict) 
 
 
 def verify(f2b, wav: Path) -> dict:
-    raw, _ = f2b(str(wav))
+    raw, down = f2b(str(wav))
     b, _, _ = repair_beats(np.asarray(raw, float))
     i = np.arange(len(b))
     s, c = np.polyfit(i, b, 1)
     r = np.abs(b - (s * i + c)) * 1000
+    # beat e downbeat rilevati sull'output, per la vista forma d'onda della GUI
     return {"bpm": float(60 / s), "err_median_ms": float(np.median(r)),
-            "err_max_ms": float(np.max(r))}
+            "err_max_ms": float(np.max(r)),
+            "beats": [round(float(x), 4) for x in raw],
+            "downbeats": [round(float(x), 4) for x in down]}
 
 
 # ---------------------------------------------------------------- pipeline
