@@ -7,6 +7,12 @@ Pipeline: ffmpeg → beat_this (beat/downbeat) → riparazione beat → tempo ma
 `rubberband --fine --timemap` (R3) → ffmpeg (MP3 320k, tag ID3v2.3, copertina) →
 `rekordbox.xml` (playlist "Quantized") + `report.json`.
 
+<p align="center">
+  <img src="docs/screenshot.png" alt="Quantizer: forma d'onda con la griglia Rekordbox e grafico del tempo del batterista">
+</p>
+
+<sub>Nello screenshot: "On & On" di Cartoon feat. Daniel Levi, pubblicato da [NCS (NoCopyrightSounds)](https://ncs.io).</sub>
+
 ## Setup (macOS Apple Silicon, senza Xcode)
 
 Homebrew non fornisce più bottle (binari precompilati) per macOS 14, quindi
